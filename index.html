@@ -16,6 +16,10 @@
       </div>
       <h1 id="jarvis-title">JARVIS</h1>
       <p id="jarvis-sub">also known as <span>Rudra</span></p>
+      <div id="ai-badge">
+        <span id="ai-indicator"></span>
+        NVIDIA AI · gpt-oss-120b
+      </div>
     </div>
 
     <div id="chat-area">
@@ -23,9 +27,9 @@
     </div>
 
     <div id="input-area">
-      <input type="text" id="text-input" placeholder='Type a command or say "Open Rudra"...' autocomplete="off" />
+      <input type="text" id="text-input" placeholder='Ask anything, or say "Open Rudra"...' autocomplete="off" />
       <button id="send-btn" title="Send">&#9654;</button>
-      <button id="mic-btn" title="Mic">🎤</button>
+      <button id="mic-btn" title="Toggle Microphone">🎤</button>
     </div>
 
     <div id="mic-status">Microphone OFF</div>
@@ -72,13 +76,8 @@
         <h3>📆 Generated Schedule</h3>
         <div id="schedule-controls">
           <select id="schedule-day">
-            <option value="Monday">Monday</option>
-            <option value="Tuesday">Tuesday</option>
-            <option value="Wednesday">Wednesday</option>
-            <option value="Thursday">Thursday</option>
-            <option value="Friday">Friday</option>
-            <option value="Saturday">Saturday</option>
-            <option value="Sunday">Sunday</option>
+            <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
+            <option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option>
           </select>
           <button onclick="generateSchedule()">⚡ Generate</button>
           <button onclick="generateWeekly()">📅 Full Week</button>
@@ -94,7 +93,6 @@
         <div id="progress-list"></div>
       </div>
     </div>
-
   </div>
 
   <!-- OVERLAY -->
