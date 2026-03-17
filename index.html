@@ -1,103 +1,219 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Jarvis — Rudra AI</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>JARVIS + RUDRA</title>
+  <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
 
-  <!-- MAIN JARVIS UI -->
-  <div id="jarvis-container">
-    <div id="jarvis-header">
-      <div id="avatar-ring">
-        <div id="avatar-core"></div>
+<!-- TOP NAV -->
+<div id="topnav">
+  <div id="nav-left">⚡ JARVIS</div>
+  <div id="nav-right">⚙ RUDRA</div>
+</div>
+
+<!-- MAIN GRID -->
+<div id="main-grid">
+
+  <!-- LEFT PANEL -->
+  <div id="left-panel">
+    <div class="panel-block">
+      <div class="panel-title">// SYSTEM</div>
+      <div class="sys-row"><span>FPS</span><div class="bar-wrap"><div class="bar" id="bar-fps"></div></div><span id="val-fps">--</span></div>
+      <div class="sys-row"><span>RAM</span><div class="bar-wrap"><div class="bar" id="bar-ram"></div></div><span id="val-ram">--</span></div>
+      <div class="sys-row"><span>NET</span><div class="bar-wrap"><div class="bar" id="bar-net"></div></div><span id="val-net">--</span></div>
+      <div class="sys-stats">
+        <div>CPU: <span id="cpu-val">--</span></div>
+        <div>UPTIME: <span id="uptime-val">00:00:00</span></div>
+        <div>BATT: <span id="batt-pct">--%</span></div>
+        <div>PWR: <span id="pwr-status">--</span></div>
       </div>
-      <h1 id="jarvis-title">JARVIS</h1>
-      <p id="jarvis-sub">also known as <span>Rudra</span></p>
-      <div id="ai-badge">
-        <span id="ai-indicator"></span>
-        NVIDIA AI · gpt-oss-120b
+    </div>
+
+    <div class="panel-block" id="weather-block">
+      <div class="panel-title">// WEATHER</div>
+      <div id="weather-temp">--°C</div>
+      <div id="weather-desc">LOADING...</div>
+      <div class="weather-details">
+        <div>LOC: <span id="w-loc">--</span></div>
+        <div>HUM: <span id="w-hum">--%</span></div>
+        <div>WIND: <span id="w-wind">-- km/h</span></div>
       </div>
+    </div>
+
+    <div class="panel-block">
+      <div class="panel-title">// STATE</div>
+      <div class="state-grid">
+        <div>STATE<br/><span id="state-val" class="cyan">22</span></div>
+        <div>RESPONSE<br/><span id="resp-val" class="cyan">1S:03MS</span></div>
+        <div>BATTERY<br/><span id="batt-val2" class="cyan">--%</span></div>
+        <div>VOICE<br/><span id="voice-state" class="cyan">READY</span></div>
+        <div>AI<br/><span id="ai-state" class="cyan">NVIDIA</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER PANEL -->
+  <div id="center-panel">
+
+    <!-- TOP HUD -->
+    <div id="hud-top">
+      <div id="hud-title">J.A.R.V.I.S</div>
+      <div id="hud-right-info">
+        <span id="batt-icon">🔋</span>
+        <span id="hud-batt">--%</span>
+        <span id="hud-time">--:--:--</span>
+      </div>
+    </div>
+
+    <!-- CIRCULAR CLOCK + MIC -->
+    <div id="clock-section">
+      <div id="outer-ring">
+        <svg id="ring-svg" viewBox="0 0 260 260">
+          <circle cx="130" cy="130" r="122" fill="none" stroke="#00cfff22" stroke-width="1"/>
+          <circle cx="130" cy="130" r="112" fill="none" stroke="#00cfff44" stroke-width="0.5" stroke-dasharray="4 6"/>
+          <circle cx="130" cy="130" r="100" fill="none" stroke="#00cfff" stroke-width="1.5" stroke-dasharray="300 50" stroke-linecap="round"/>
+          <circle cx="130" cy="130" r="88"  fill="none" stroke="#00cfff66" stroke-width="1" stroke-dasharray="8 4"/>
+          <circle cx="130" cy="130" r="100" fill="none" stroke="#00cfff" stroke-width="2" stroke-dasharray="30 600" stroke-linecap="round" id="rot-arc"/>
+        </svg>
+        <div id="clock-display">
+          <div id="clock-hm">--:--</div>
+          <div id="clock-date">-- --- --</div>
+        </div>
+      </div>
+
+      <div id="mic-wrap">
+        <button id="mic-btn" title="Tap to speak / Stop">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </button>
+        <div id="mic-label">TAP MIC TO SPEAK</div>
+        <div id="mic-sub">Tap mic and speak</div>
+      </div>
+    </div>
+
+    <div id="interface-bar">
+      <span class="panel-title">// INTERFACE</span>
+      <span id="iface-status" class="cyan">●ACTIVE</span>
     </div>
 
     <div id="chat-area">
       <div id="messages"></div>
     </div>
 
-    <div id="input-area">
-      <input type="text" id="text-input" placeholder='Ask anything, or say "Open Rudra"...' autocomplete="off" />
-      <button id="send-btn" title="Send">&#9654;</button>
-      <button id="mic-btn" title="Toggle Microphone">🎤</button>
+    <div id="input-row">
+      <input type="text" id="text-input" placeholder="TYPE A COMMAND HERE..." autocomplete="off"/>
+      <button id="send-btn">SEND</button>
     </div>
 
-    <div id="mic-status">Microphone OFF</div>
+    <div id="bottom-tabs">
+      <button class="btab active" data-tab="time" onclick="btabClick(this,'time')">TIME</button>
+      <button class="btab" data-tab="batt" onclick="btabClick(this,'batt')">BATT</button>
+      <button class="btab" data-tab="alarm" onclick="btabClick(this,'alarm')">ALARM</button>
+      <button class="btab" data-tab="joke" onclick="btabClick(this,'joke')">JOKE</button>
+    </div>
+    <div id="btab-content">
+      <div id="btab-time" class="btab-pane">
+        <span id="btab-clock">--:--:--</span> &nbsp;|&nbsp; <span id="btab-date-full">--- -- ----</span>
+      </div>
+      <div id="btab-batt" class="btab-pane hidden">
+        Battery: <span id="btab-batt-val">--%</span> &nbsp;|&nbsp; Status: <span id="btab-batt-status">--</span>
+      </div>
+      <div id="btab-alarm" class="btab-pane hidden">
+        <input type="time" id="alarm-time"/> <button onclick="setAlarm()">SET ALARM</button> &nbsp;<span id="alarm-status"></span>
+      </div>
+      <div id="btab-joke" class="btab-pane hidden">
+        <button onclick="fetchJoke()">GET JOKE</button> &nbsp;<span id="joke-text"></span>
+      </div>
+    </div>
+
   </div>
 
-  <!-- RUDRA PANEL -->
-  <div id="rudra-panel" class="hidden">
-    <div id="rudra-header">
-      <h2>⚡ Rudra Panel</h2>
-      <button id="close-rudra">✕</button>
+  <!-- RIGHT PANEL -->
+  <div id="right-panel">
+    <div class="panel-block">
+      <div class="panel-title">// ACTIVITY LOG</div>
+      <div id="activity-log"></div>
     </div>
-
-    <div id="rudra-tabs">
-      <button class="tab-btn active" data-tab="agheera">Agheera</button>
-      <button class="tab-btn" data-tab="schedule">Schedule</button>
-      <button class="tab-btn" data-tab="progress">Progress</button>
-    </div>
-
-    <!-- AGHEERA TAB -->
-    <div id="tab-agheera" class="tab-content active">
-      <div class="section-block">
-        <h3>📅 Daily Routine</h3>
-        <div id="routine-list"></div>
-        <div class="add-row">
-          <input type="text" id="routine-time" placeholder="Time (e.g. 7:00 AM)" />
-          <input type="text" id="routine-task" placeholder="Activity (e.g. Morning Pooja)" />
-          <button onclick="addRoutine()">+ Add</button>
-        </div>
-      </div>
-      <div class="section-block">
-        <h3>🎯 Learning Goals</h3>
-        <div id="goals-list"></div>
-        <div class="add-row">
-          <input type="text" id="goal-name" placeholder="Goal (e.g. Web Development)" />
-          <input type="text" id="goal-duration" placeholder="Duration (e.g. 3 months)" />
-          <button onclick="addGoal()">+ Add</button>
-        </div>
+    <div class="panel-block">
+      <div class="panel-title">// RADAR</div>
+      <div id="radar-wrap">
+        <canvas id="radar-canvas" width="150" height="150"></canvas>
       </div>
     </div>
-
-    <!-- SCHEDULE TAB -->
-    <div id="tab-schedule" class="tab-content hidden">
-      <div class="section-block">
-        <h3>📆 Generated Schedule</h3>
-        <div id="schedule-controls">
-          <select id="schedule-day">
-            <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
-            <option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option>
-          </select>
-          <button onclick="generateSchedule()">⚡ Generate</button>
-          <button onclick="generateWeekly()">📅 Full Week</button>
-        </div>
-        <div id="schedule-output"></div>
-      </div>
-    </div>
-
-    <!-- PROGRESS TAB -->
-    <div id="tab-progress" class="tab-content hidden">
-      <div class="section-block">
-        <h3>📊 Student Progress Tracker</h3>
-        <div id="progress-list"></div>
+    <div class="panel-block">
+      <div class="panel-title">// QUICK</div>
+      <div id="quick-btns">
+        <button class="qbtn" onclick="qCmd('time')">TIME</button>
+        <button class="qbtn" onclick="qCmd('joke')">JOKE</button>
+        <button class="qbtn" onclick="qCmd('weather')">WEATHER</button>
+        <button class="qbtn" onclick="qCmd('yt')">YT</button>
       </div>
     </div>
   </div>
 
-  <!-- OVERLAY -->
-  <div id="overlay" class="hidden" onclick="closeRudra()"></div>
+</div>
 
-  <script src="app.js"></script>
+<!-- RUDRA PANEL -->
+<div id="rudra-panel" class="hidden">
+  <div id="rudra-header">
+    <h2>⚡ RUDRA PANEL</h2>
+    <button id="close-rudra" onclick="closeRudra()">✕</button>
+  </div>
+  <div id="rudra-tabs">
+    <button class="tab-btn active" data-tab="agheera" onclick="switchTab('agheera')">AGHEERA</button>
+    <button class="tab-btn" data-tab="schedule" onclick="switchTab('schedule')">SCHEDULE</button>
+    <button class="tab-btn" data-tab="progress" onclick="switchTab('progress')">PROGRESS</button>
+  </div>
+  <div id="tab-agheera" class="tab-content active">
+    <div class="section-block">
+      <h3>📅 DAILY ROUTINE</h3>
+      <div id="routine-list"></div>
+      <div class="add-row">
+        <input id="routine-time" placeholder="Time (e.g. 7:00 AM)"/>
+        <input id="routine-task" placeholder="Activity"/>
+        <button onclick="addRoutine()">+ ADD</button>
+      </div>
+    </div>
+    <div class="section-block">
+      <h3>🎯 LEARNING GOALS</h3>
+      <div id="goals-list"></div>
+      <div class="add-row">
+        <input id="goal-name" placeholder="Goal"/>
+        <input id="goal-duration" placeholder="Duration"/>
+        <button onclick="addGoal()">+ ADD</button>
+      </div>
+    </div>
+  </div>
+  <div id="tab-schedule" class="tab-content hidden">
+    <div class="section-block">
+      <h3>📆 SCHEDULE</h3>
+      <div id="schedule-controls">
+        <select id="schedule-day">
+          <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
+          <option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option>
+        </select>
+        <button onclick="generateSchedule()">⚡ GENERATE</button>
+        <button onclick="generateWeekly()">📅 FULL WEEK</button>
+      </div>
+      <div id="schedule-output"></div>
+    </div>
+  </div>
+  <div id="tab-progress" class="tab-content hidden">
+    <div class="section-block">
+      <h3>📊 PROGRESS TRACKER</h3>
+      <div id="progress-list"></div>
+    </div>
+  </div>
+</div>
+<div id="overlay" class="hidden" onclick="closeRudra()"></div>
+
+<script src="app.js"></script>
 </body>
 </html>
