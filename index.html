@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jarvis — Rudra AI</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- MAIN JARVIS UI -->
+  <div id="jarvis-container">
+    <div id="jarvis-header">
+      <div id="avatar-ring">
+        <div id="avatar-core"></div>
+      </div>
+      <h1 id="jarvis-title">JARVIS</h1>
+      <p id="jarvis-sub">also known as <span>Rudra</span></p>
+    </div>
+
+    <div id="chat-area">
+      <div id="messages"></div>
+    </div>
+
+    <div id="input-area">
+      <input type="text" id="text-input" placeholder='Type a command or say "Open Rudra"...' autocomplete="off" />
+      <button id="send-btn" title="Send">&#9654;</button>
+      <button id="mic-btn" title="Mic">🎤</button>
+    </div>
+
+    <div id="mic-status">Microphone OFF</div>
+  </div>
+
+  <!-- RUDRA PANEL -->
+  <div id="rudra-panel" class="hidden">
+    <div id="rudra-header">
+      <h2>⚡ Rudra Panel</h2>
+      <button id="close-rudra">✕</button>
+    </div>
+
+    <div id="rudra-tabs">
+      <button class="tab-btn active" data-tab="agheera">Agheera</button>
+      <button class="tab-btn" data-tab="schedule">Schedule</button>
+      <button class="tab-btn" data-tab="progress">Progress</button>
+    </div>
+
+    <!-- AGHEERA TAB -->
+    <div id="tab-agheera" class="tab-content active">
+      <div class="section-block">
+        <h3>📅 Daily Routine</h3>
+        <div id="routine-list"></div>
+        <div class="add-row">
+          <input type="text" id="routine-time" placeholder="Time (e.g. 7:00 AM)" />
+          <input type="text" id="routine-task" placeholder="Activity (e.g. Morning Pooja)" />
+          <button onclick="addRoutine()">+ Add</button>
+        </div>
+      </div>
+      <div class="section-block">
+        <h3>🎯 Learning Goals</h3>
+        <div id="goals-list"></div>
+        <div class="add-row">
+          <input type="text" id="goal-name" placeholder="Goal (e.g. Web Development)" />
+          <input type="text" id="goal-duration" placeholder="Duration (e.g. 3 months)" />
+          <button onclick="addGoal()">+ Add</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCHEDULE TAB -->
+    <div id="tab-schedule" class="tab-content hidden">
+      <div class="section-block">
+        <h3>📆 Generated Schedule</h3>
+        <div id="schedule-controls">
+          <select id="schedule-day">
+            <option value="Monday">Monday</option>
+            <option value="Tuesday">Tuesday</option>
+            <option value="Wednesday">Wednesday</option>
+            <option value="Thursday">Thursday</option>
+            <option value="Friday">Friday</option>
+            <option value="Saturday">Saturday</option>
+            <option value="Sunday">Sunday</option>
+          </select>
+          <button onclick="generateSchedule()">⚡ Generate</button>
+          <button onclick="generateWeekly()">📅 Full Week</button>
+        </div>
+        <div id="schedule-output"></div>
+      </div>
+    </div>
+
+    <!-- PROGRESS TAB -->
+    <div id="tab-progress" class="tab-content hidden">
+      <div class="section-block">
+        <h3>📊 Student Progress Tracker</h3>
+        <div id="progress-list"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- OVERLAY -->
+  <div id="overlay" class="hidden" onclick="closeRudra()"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
