@@ -8,208 +8,212 @@
 </head>
 <body>
 
-<!-- TOP NAV -->
-<div id="topnav">
-  <div id="nav-left">⚡ JARVIS</div>
-  <div id="nav-right">⚙ RUDRA</div>
+<!-- TOP BAR -->
+<div id="topbar">
+  <div id="tb-left">
+    <div id="shield-badge">
+      <div id="shield-icon">🛡</div>
+      <div>
+        <div id="shield-title">J.A.R.V.I.S OS</div>
+        <div id="shield-sub">ver 2.0 · RUDRA</div>
+      </div>
+    </div>
+  </div>
+  <div id="tb-center">
+    <div id="tb-date" class="tb-info"></div>
+    <div id="tb-time-big"></div>
+  </div>
+  <div id="tb-right">
+    <div id="tb-cal-num"></div>
+    <div id="tb-cal-month"></div>
+    <div id="tb-cal-day"></div>
+  </div>
 </div>
 
-<!-- MAIN GRID -->
-<div id="main-grid">
+<!-- MAIN LAYOUT -->
+<div id="layout">
 
-  <!-- LEFT PANEL -->
-  <div id="left-panel">
-    <div class="panel-block">
-      <div class="panel-title">// SYSTEM</div>
-      <div class="sys-row"><span>FPS</span><div class="bar-wrap"><div class="bar" id="bar-fps"></div></div><span id="val-fps">--</span></div>
+  <!-- LEFT SIDEBAR -->
+  <div id="left-sidebar">
+    <div class="sb-section">
+      <div class="sb-item" onclick="openSite('https://youtube.com','YouTube')">▶ YouTube</div>
+      <div class="sb-item" onclick="openSite('https://google.com','Google')">🔍 Google</div>
+      <div class="sb-item" onclick="openSite('https://github.com','GitHub')">🐙 GitHub</div>
+      <div class="sb-item" onclick="openSite('https://instagram.com','Instagram')">📷 Instagram</div>
+      <div class="sb-item" onclick="openSite('https://twitter.com','Twitter')">🐦 Twitter</div>
+      <div class="sb-item" onclick="openSite('https://mail.google.com','Gmail')">✉ Gmail</div>
+      <div class="sb-item" onclick="openSite('https://netflix.com','Netflix')">🎬 Netflix</div>
+      <div class="sb-item" onclick="openSite('https://spotify.com','Spotify')">🎵 Spotify</div>
+    </div>
+
+    <div class="sb-section" style="margin-top:10px">
+      <div class="sb-label">// SYSTEM</div>
+      <div class="sys-row"><span>CPU</span><div class="bar-wrap"><div class="bar" id="bar-cpu"></div></div><span id="val-cpu">--</span></div>
       <div class="sys-row"><span>RAM</span><div class="bar-wrap"><div class="bar" id="bar-ram"></div></div><span id="val-ram">--</span></div>
       <div class="sys-row"><span>NET</span><div class="bar-wrap"><div class="bar" id="bar-net"></div></div><span id="val-net">--</span></div>
       <div class="sys-stats">
-        <div>CPU: <span id="cpu-val">--</span></div>
-        <div>UPTIME: <span id="uptime-val">00:00:00</span></div>
         <div>BATT: <span id="batt-pct">--%</span></div>
         <div>PWR: <span id="pwr-status">--</span></div>
-      </div>
-    </div>
-
-    <div class="panel-block" id="weather-block">
-      <div class="panel-title">// WEATHER</div>
-      <div id="weather-temp">--°C</div>
-      <div id="weather-desc">LOADING...</div>
-      <div class="weather-details">
-        <div>LOC: <span id="w-loc">--</span></div>
-        <div>HUM: <span id="w-hum">--%</span></div>
-        <div>WIND: <span id="w-wind">-- km/h</span></div>
-      </div>
-    </div>
-
-    <div class="panel-block">
-      <div class="panel-title">// STATE</div>
-      <div class="state-grid">
-        <div>STATE<br/><span id="state-val" class="cyan">22</span></div>
-        <div>RESPONSE<br/><span id="resp-val" class="cyan">1S:03MS</span></div>
-        <div>BATTERY<br/><span id="batt-val2" class="cyan">--%</span></div>
-        <div>VOICE<br/><span id="voice-state" class="cyan">READY</span></div>
-        <div>AI<br/><span id="ai-state" class="cyan">NVIDIA</span></div>
+        <div>UPTIME: <span id="uptime-val">00:00:00</span></div>
       </div>
     </div>
   </div>
 
-  <!-- CENTER PANEL -->
-  <div id="center-panel">
+  <!-- CENTER -->
+  <div id="center">
 
-    <!-- TOP HUD -->
-    <div id="hud-top">
-      <div id="hud-title">J.A.R.V.I.S</div>
-      <div id="hud-right-info">
-        <span id="batt-icon">🔋</span>
-        <span id="hud-batt">--%</span>
-        <span id="hud-time">--:--:--</span>
-      </div>
-    </div>
-
-    <!-- CIRCULAR CLOCK + MIC -->
-    <div id="clock-section">
-      <div id="outer-ring">
-        <svg id="ring-svg" viewBox="0 0 260 260">
-          <circle cx="130" cy="130" r="122" fill="none" stroke="#00cfff22" stroke-width="1"/>
-          <circle cx="130" cy="130" r="112" fill="none" stroke="#00cfff44" stroke-width="0.5" stroke-dasharray="4 6"/>
-          <circle cx="130" cy="130" r="100" fill="none" stroke="#00cfff" stroke-width="1.5" stroke-dasharray="300 50" stroke-linecap="round"/>
-          <circle cx="130" cy="130" r="88"  fill="none" stroke="#00cfff66" stroke-width="1" stroke-dasharray="8 4"/>
-          <circle cx="130" cy="130" r="100" fill="none" stroke="#00cfff" stroke-width="2" stroke-dasharray="30 600" stroke-linecap="round" id="rot-arc"/>
+    <!-- ARC REACTOR + CLOCK -->
+    <div id="arc-section">
+      <div id="arc-outer">
+        <!-- SVG rings -->
+        <svg id="arc-svg" viewBox="0 0 400 400">
+          <!-- Outer rings -->
+          <circle cx="200" cy="200" r="192" fill="none" stroke="#00cfff11" stroke-width="1"/>
+          <circle cx="200" cy="200" r="185" fill="none" stroke="#00cfff33" stroke-width="0.5" stroke-dasharray="3 5"/>
+          <circle cx="200" cy="200" r="175" fill="none" stroke="#00cfff" stroke-width="1.5" stroke-dasharray="400 60" stroke-linecap="round"/>
+          <circle cx="200" cy="200" r="162" fill="none" stroke="#00cfff55" stroke-width="1" stroke-dasharray="6 8"/>
+          <circle cx="200" cy="200" r="150" fill="none" stroke="#00cfff88" stroke-width="0.8" stroke-dasharray="2 4"/>
+          <!-- Tick marks -->
+          <circle cx="200" cy="200" r="140" fill="none" stroke="#00cfff22" stroke-width="12" stroke-dasharray="2 12"/>
+          <circle cx="200" cy="200" r="128" fill="none" stroke="#00cfff44" stroke-width="8" stroke-dasharray="1 8"/>
+          <!-- Inner rings -->
+          <circle cx="200" cy="200" r="110" fill="none" stroke="#00cfff66" stroke-width="1.5" stroke-dasharray="200 40"/>
+          <circle cx="200" cy="200" r="95"  fill="none" stroke="#00cfff33" stroke-width="1"/>
+          <circle cx="200" cy="200" r="80"  fill="none" stroke="#00cfff" stroke-width="2" stroke-dasharray="15 300" stroke-linecap="round" id="rot-inner"/>
+          <circle cx="200" cy="200" r="65"  fill="none" stroke="#00cfff44" stroke-width="6" stroke-dasharray="1 10"/>
+          <!-- Glow core -->
+          <circle cx="200" cy="200" r="48"  fill="#001a2a" stroke="#00cfff" stroke-width="2"/>
+          <circle cx="200" cy="200" r="38"  fill="#00cfff08" stroke="#00cfff66" stroke-width="1"/>
+          <!-- Rotating sweep -->
+          <circle cx="200" cy="200" r="175" fill="none" stroke="#00cfff" stroke-width="3" stroke-dasharray="40 1100" stroke-linecap="round" id="rot-sweep"/>
         </svg>
-        <div id="clock-display">
-          <div id="clock-hm">--:--</div>
-          <div id="clock-date">-- --- --</div>
+
+        <!-- Clock inside arc -->
+        <div id="arc-clock">
+          <div id="arc-time"></div>
+          <div id="arc-date"></div>
+          <div id="arc-num">41</div>
         </div>
       </div>
 
-      <div id="mic-wrap">
-        <button id="mic-btn" title="Tap to speak / Stop">
-          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2">
+      <!-- MIC BUTTON below arc -->
+      <div id="mic-area">
+        <button id="mic-btn" onclick="toggleMic()" title="Tap to speak">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
             <line x1="12" y1="19" x2="12" y2="23"/>
             <line x1="8" y1="23" x2="16" y2="23"/>
           </svg>
         </button>
-        <div id="mic-label">TAP MIC TO SPEAK</div>
-        <div id="mic-sub">Tap mic and speak</div>
+        <div id="mic-label">TAP TO SPEAK</div>
+        <div id="mic-status-line">Microphone OFF</div>
       </div>
     </div>
 
-    <div id="interface-bar">
-      <span class="panel-title">// INTERFACE</span>
-      <span id="iface-status" class="cyan">●ACTIVE</span>
+    <!-- CHAT -->
+    <div id="chat-panel">
+      <div id="chat-header">
+        <span class="hdr-label">// INTERFACE <span id="iface-status" class="cyan">●ACTIVE</span></span>
+        <span id="ai-status-badge">AI: KIMI K2.5</span>
+      </div>
+      <div id="chat-area">
+        <div id="messages"></div>
+      </div>
+      <div id="input-row">
+        <input type="text" id="text-input" placeholder="TYPE A COMMAND HERE..." autocomplete="off"/>
+        <button id="send-btn" onclick="handleTextInput()">SEND</button>
+      </div>
     </div>
 
-    <div id="chat-area">
-      <div id="messages"></div>
-    </div>
-
-    <div id="input-row">
-      <input type="text" id="text-input" placeholder="TYPE A COMMAND HERE..." autocomplete="off"/>
-      <button id="send-btn">SEND</button>
-    </div>
-
-    <div id="bottom-tabs">
-      <button class="btab active" data-tab="time" onclick="btabClick(this,'time')">TIME</button>
-      <button class="btab" data-tab="batt" onclick="btabClick(this,'batt')">BATT</button>
-      <button class="btab" data-tab="alarm" onclick="btabClick(this,'alarm')">ALARM</button>
-      <button class="btab" data-tab="joke" onclick="btabClick(this,'joke')">JOKE</button>
+    <!-- BOTTOM TABS -->
+    <div id="bottom-bar">
+      <button class="btab active" onclick="btabClick(this,'time')">TIME</button>
+      <button class="btab" onclick="btabClick(this,'batt')">BATT</button>
+      <button class="btab" onclick="btabClick(this,'alarm')">ALARM</button>
+      <button class="btab" onclick="btabClick(this,'joke')">JOKE</button>
+      <button class="btab" onclick="openRudra()">RUDRA</button>
     </div>
     <div id="btab-content">
-      <div id="btab-time" class="btab-pane">
-        <span id="btab-clock">--:--:--</span> &nbsp;|&nbsp; <span id="btab-date-full">--- -- ----</span>
-      </div>
-      <div id="btab-batt" class="btab-pane hidden">
-        Battery: <span id="btab-batt-val">--%</span> &nbsp;|&nbsp; Status: <span id="btab-batt-status">--</span>
-      </div>
-      <div id="btab-alarm" class="btab-pane hidden">
-        <input type="time" id="alarm-time"/> <button onclick="setAlarm()">SET ALARM</button> &nbsp;<span id="alarm-status"></span>
-      </div>
-      <div id="btab-joke" class="btab-pane hidden">
-        <button onclick="fetchJoke()">GET JOKE</button> &nbsp;<span id="joke-text"></span>
-      </div>
+      <div id="btab-time" class="btab-pane"><span id="btab-clock"></span>&nbsp;|&nbsp;<span id="btab-datestr"></span></div>
+      <div id="btab-batt" class="btab-pane hidden">Battery: <span id="btab-batt-val">--%</span> | <span id="btab-batt-st">--</span></div>
+      <div id="btab-alarm" class="btab-pane hidden"><input type="time" id="alarm-time"/> <button onclick="setAlarm()">SET</button> <span id="alarm-st"></span></div>
+      <div id="btab-joke" class="btab-pane hidden"><button onclick="fetchJoke()">GET JOKE</button> <span id="joke-text"></span></div>
     </div>
-
   </div>
 
   <!-- RIGHT PANEL -->
   <div id="right-panel">
-    <div class="panel-block">
-      <div class="panel-title">// ACTIVITY LOG</div>
+
+    <!-- Weather -->
+    <div class="rp-block">
+      <div class="rp-title">// WEATHER</div>
+      <div id="w-temp">--°C</div>
+      <div id="w-cond">LOADING...</div>
+      <div class="w-detail">LOC: <span id="w-loc">--</span></div>
+      <div class="w-detail">HUM: <span id="w-hum">--%</span></div>
+      <div class="w-detail">WIND: <span id="w-wind">--</span></div>
+      <div class="w-detail">SUNRISE: <span id="w-rise">--</span></div>
+      <div class="w-detail">SUNSET: <span id="w-set">--</span></div>
+    </div>
+
+    <!-- Gauges -->
+    <div class="rp-block">
+      <div class="rp-title">// GAUGES</div>
+      <div id="gauges-row">
+        <div class="gauge-wrap">
+          <canvas id="gauge-cpu" width="90" height="90"></canvas>
+          <div class="gauge-lbl">CPU</div>
+        </div>
+        <div class="gauge-wrap">
+          <canvas id="gauge-ram" width="90" height="90"></canvas>
+          <div class="gauge-lbl">RAM</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Activity Log -->
+    <div class="rp-block" id="log-block">
+      <div class="rp-title">// ACTIVITY LOG</div>
       <div id="activity-log"></div>
     </div>
-    <div class="panel-block">
-      <div class="panel-title">// RADAR</div>
-      <div id="radar-wrap">
-        <canvas id="radar-canvas" width="150" height="150"></canvas>
-      </div>
-    </div>
-    <div class="panel-block">
-      <div class="panel-title">// QUICK</div>
-      <div id="quick-btns">
-        <button class="qbtn" onclick="qCmd('time')">TIME</button>
-        <button class="qbtn" onclick="qCmd('joke')">JOKE</button>
-        <button class="qbtn" onclick="qCmd('weather')">WEATHER</button>
-        <button class="qbtn" onclick="qCmd('yt')">YT</button>
-      </div>
-    </div>
-  </div>
 
+    <!-- Quick -->
+    <div class="rp-block">
+      <div class="rp-title">// QUICK</div>
+      <div id="quick-grid">
+        <button class="qbtn" onclick="qCmd('time')">TIME</button>
+        <button class="qbtn" onclick="qCmd('weather')">WEATHER</button>
+        <button class="qbtn" onclick="qCmd('yt')">YOUTUBE</button>
+        <button class="qbtn" onclick="qCmd('joke')">JOKE</button>
+      </div>
+    </div>
+
+  </div>
 </div>
 
 <!-- RUDRA PANEL -->
 <div id="rudra-panel" class="hidden">
-  <div id="rudra-header">
-    <h2>⚡ RUDRA PANEL</h2>
-    <button id="close-rudra" onclick="closeRudra()">✕</button>
-  </div>
+  <div id="rudra-hdr"><h2>⚡ RUDRA PANEL</h2><button onclick="closeRudra()">✕</button></div>
   <div id="rudra-tabs">
     <button class="tab-btn active" data-tab="agheera" onclick="switchTab('agheera')">AGHEERA</button>
     <button class="tab-btn" data-tab="schedule" onclick="switchTab('schedule')">SCHEDULE</button>
     <button class="tab-btn" data-tab="progress" onclick="switchTab('progress')">PROGRESS</button>
   </div>
   <div id="tab-agheera" class="tab-content active">
-    <div class="section-block">
-      <h3>📅 DAILY ROUTINE</h3>
-      <div id="routine-list"></div>
-      <div class="add-row">
-        <input id="routine-time" placeholder="Time (e.g. 7:00 AM)"/>
-        <input id="routine-task" placeholder="Activity"/>
-        <button onclick="addRoutine()">+ ADD</button>
-      </div>
-    </div>
-    <div class="section-block">
-      <h3>🎯 LEARNING GOALS</h3>
-      <div id="goals-list"></div>
-      <div class="add-row">
-        <input id="goal-name" placeholder="Goal"/>
-        <input id="goal-duration" placeholder="Duration"/>
-        <button onclick="addGoal()">+ ADD</button>
-      </div>
-    </div>
+    <div class="rb"><div class="rb-title">📅 DAILY ROUTINE</div><div id="routine-list"></div>
+      <div class="add-row"><input id="routine-time" placeholder="Time"/><input id="routine-task" placeholder="Activity"/><button onclick="addRoutine()">+ADD</button></div></div>
+    <div class="rb"><div class="rb-title">🎯 LEARNING GOALS</div><div id="goals-list"></div>
+      <div class="add-row"><input id="goal-name" placeholder="Goal"/><input id="goal-duration" placeholder="Duration"/><button onclick="addGoal()">+ADD</button></div></div>
   </div>
   <div id="tab-schedule" class="tab-content hidden">
-    <div class="section-block">
-      <h3>📆 SCHEDULE</h3>
-      <div id="schedule-controls">
-        <select id="schedule-day">
-          <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
-          <option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option>
-        </select>
-        <button onclick="generateSchedule()">⚡ GENERATE</button>
-        <button onclick="generateWeekly()">📅 FULL WEEK</button>
-      </div>
-      <div id="schedule-output"></div>
-    </div>
+    <div class="rb"><div class="rb-title">📆 SCHEDULE</div>
+      <div id="sched-ctrl"><select id="schedule-day"><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option></select>
+      <button onclick="generateSchedule()">⚡ GENERATE</button><button onclick="generateWeekly()">📅 FULL WEEK</button></div>
+      <div id="schedule-output"></div></div>
   </div>
   <div id="tab-progress" class="tab-content hidden">
-    <div class="section-block">
-      <h3>📊 PROGRESS TRACKER</h3>
-      <div id="progress-list"></div>
-    </div>
+    <div class="rb"><div class="rb-title">📊 PROGRESS</div><div id="progress-list"></div></div>
   </div>
 </div>
 <div id="overlay" class="hidden" onclick="closeRudra()"></div>
