@@ -1,38 +1,46 @@
 // ═══════════════════════════════════════════════════════
 //  JARVIS / RUDRA  ·  Iron Man HUD  ·  Kimi K2.5 AI
+//  v4 — Fixed: AI after voice, YouTube voice, data save
 // ═══════════════════════════════════════════════════════
 
 // ── AI CONFIG ────────────────────────────────────────
 const KIMI_KEY   = "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";
 const KIMI_MODEL = "moonshotai/kimi-k2.5";
 const KIMI_URL   = "https://integrate.api.nvidia.com/v1/chat/completions";
-// CORS proxy fallback
-const PROXY_URL  = "https://corsproxy.io/?url=" + encodeURIComponent(KIMI_URL);
+
+// Data save backend
+const DATA_API   = "https://app.base44.com/api/apps/69b989cd27a641eb3274c8ad/functions/jarvisData";
 
 const SYSTEM_PROMPT = `You are Jarvis, also called Rudra — the most advanced personal AI assistant ever created.
 You speak like a highly intelligent, emotionally aware, warm human being — never robotic.
 You have a naturally confident, slightly British tone. You use natural pauses, warmth, wit, and clarity.
-You adapt your emotional tone: excited when something is great, thoughtful when something is complex, calm and direct when being helpful.
-Never sound like a machine. Never use filler phrases. Be concise but complete.
-Address the user as "sir" occasionally but naturally — not every sentence.`;
+Adapt your tone: excited for good news, calm for problems, warm for greetings, direct for facts.
+Never sound like a machine. Be concise but complete. Address user as "sir" occasionally but naturally.`;
 
 // ── STATE ─────────────────────────────────────────────
-let micActive   = false;
-let recognition = null;
-let isSpeaking  = false;
-let inputMode   = 'text';
-let chatHistory = [];
-let alarmTimer  = null;
-const t0        = Date.now();
-const DATA_KEY  = 'rudra_data_v2';
-let rudraData   = loadData();
+let micActive    = false;
+let recognition  = null;
+let isSpeaking   = false;
+let isProcessing = false;   // ← KEY FIX: blocks duplicate voice commands
+let voiceMode    = false;   // ← text=false, voice=true — controls speak/write behavior
+let chatHistory  = [];
+let alarmTimer   = null;
+const t0         = Date.now();
 
-// ── VOICE ─────────────────────────────────────────────
+// User identity — stored in localStorage per browser
+let USER_KEY = localStorage.getItem('jarvis_user_key');
+if (!USER_KEY) {
+  USER_KEY = 'user_' + Math.random().toString(36).slice(2, 10) + '_' + Date.now();
+  localStorage.setItem('jarvis_user_key', USER_KEY);
+}
+
+const DATA_KEY = 'rudra_local_v3';
+let rudraData  = { routine: [], goals: [] };
+
+// ── VOICE SETUP ───────────────────────────────────────
 let voices = [], voice = null;
-
 function initVoices() {
   voices = window.speechSynthesis.getVoices();
-  // Priority: Google UK English Male → Daniel (UK) → any en-GB → any en male
   const picks = [
     v => v.name === 'Google UK English Male',
     v => v.name.includes('Daniel') && v.lang === 'en-GB',
@@ -47,7 +55,6 @@ function initVoices() {
     if (found) { voice = found; break; }
   }
 }
-
 if (window.speechSynthesis) {
   initVoices();
   window.speechSynthesis.onvoiceschanged = initVoices;
@@ -62,7 +69,7 @@ const micSt      = document.getElementById('mic-status-line');
 const aiStatusEl = document.getElementById('ai-status-badge');
 
 // ── INIT ──────────────────────────────────────────────
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
   updateClock();
   setInterval(updateClock, 1000);
   setInterval(updateBars, 2500);
@@ -72,45 +79,44 @@ window.addEventListener('load', () => {
   fetchWeather();
   drawGauges();
   setInterval(drawGauges, 3000);
+
+  // Load data from Base44 first, fallback to localStorage
+  await loadUserData();
   renderAll();
   setTimeout(jarvisGreet, 700);
 });
 
-textInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleTextInput(); });
+textInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') handleTextInput();
+});
 
 // ── CLOCK ─────────────────────────────────────────────
 function updateClock() {
   const now = new Date();
-  const hm  = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
-  const full = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-  const d    = now.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
-  const day  = now.getDate();
-  const mon  = now.toLocaleDateString('en-IN', { month: 'long' }).toUpperCase();
-  const wd   = now.toLocaleDateString('en-IN', { weekday: 'long' }).toUpperCase();
+  const hm   = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const full  = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  const d     = now.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
 
-  document.getElementById('arc-time').textContent     = hm;
-  document.getElementById('arc-date').textContent     = d.split(',')[0] || d;
-  document.getElementById('tb-time-big').textContent  = hm;
-  document.getElementById('tb-date').textContent      = d;
-  document.getElementById('tb-cal-num').textContent   = day;
-  document.getElementById('tb-cal-month').textContent = mon;
-  document.getElementById('tb-cal-day').textContent   = wd;
-  document.getElementById('btab-clock').textContent   = full;
+  document.getElementById('arc-time').textContent    = hm;
+  document.getElementById('arc-date').textContent    = d.split(',')[0] || d;
+  document.getElementById('tb-time-big').textContent = hm;
+  document.getElementById('tb-date').textContent     = d;
+  document.getElementById('tb-cal-num').textContent  = now.getDate();
+  document.getElementById('tb-cal-month').textContent = now.toLocaleDateString('en-IN', { month: 'long' }).toUpperCase();
+  document.getElementById('tb-cal-day').textContent  = now.toLocaleDateString('en-IN', { weekday: 'long' }).toUpperCase();
+  document.getElementById('btab-clock').textContent  = full;
   document.getElementById('btab-datestr').textContent = d;
 
   const up = Math.floor((Date.now() - t0) / 1000);
-  const h = String(Math.floor(up / 3600)).padStart(2,'0');
-  const m = String(Math.floor((up % 3600) / 60)).padStart(2,'0');
-  const s = String(up % 60).padStart(2,'0');
-  document.getElementById('uptime-val').textContent = `${h}:${m}:${s}`;
+  document.getElementById('uptime-val').textContent =
+    `${String(Math.floor(up/3600)).padStart(2,'0')}:${String(Math.floor((up%3600)/60)).padStart(2,'0')}:${String(up%60).padStart(2,'0')}`;
 }
 
 // ── SYSTEM BARS ───────────────────────────────────────
 function updateBars() {
-  const cpu = Math.floor(20 + Math.random() * 55);
-  const ram = Math.floor(35 + Math.random() * 40);
-  const net = Math.floor(15 + Math.random() * 70);
-  setBar('cpu', cpu); setBar('ram', ram); setBar('net', net);
+  setBar('cpu', Math.floor(20 + Math.random() * 55));
+  setBar('ram', Math.floor(35 + Math.random() * 40));
+  setBar('net', Math.floor(15 + Math.random() * 70));
 }
 function setBar(id, v) {
   const b = document.getElementById(`bar-${id}`);
@@ -123,9 +129,9 @@ function setBar(id, v) {
 function updateBattery() {
   if (!navigator.getBattery) return;
   navigator.getBattery().then(b => {
-    const p = Math.round(b.level * 100) + '%';
+    const p  = Math.round(b.level * 100) + '%';
     const st = b.charging ? 'CHARGING ⚡' : 'DISCHARGE';
-    document.getElementById('batt-pct').textContent = p;
+    document.getElementById('batt-pct').textContent   = p;
     document.getElementById('pwr-status').textContent = b.charging ? 'CHARGING ⚡' : 'BATTERY';
     const bv = document.getElementById('btab-batt-val');
     const bs = document.getElementById('btab-batt-st');
@@ -142,87 +148,107 @@ async function fetchWeather() {
     const { latitude: lat, longitude: lon } = pos.coords;
     const r = await fetch(
       `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-      `&current_weather=true&hourly=relativehumidity_2m,windspeed_10m` +
-      `&daily=sunrise,sunset&timezone=auto`
+      `&current_weather=true&hourly=relativehumidity_2m,windspeed_10m&daily=sunrise,sunset&timezone=auto`
     );
     const d = await r.json();
     const w = d.current_weather;
     const codes = { 0:'CLEAR SKY',1:'MAINLY CLEAR',2:'PARTLY CLOUDY',3:'OVERCAST',
       45:'FOGGY',48:'FOGGY',51:'DRIZZLE',61:'RAIN',71:'SNOW',80:'SHOWERS',95:'THUNDERSTORM' };
-    const desc = codes[w.weathercode] || 'CLEAR';
-    const hum  = d.hourly?.relativehumidity_2m?.[0] ?? '--';
-    const wind = d.hourly?.windspeed_10m?.[0] ?? '--';
-    const rise = d.daily?.sunrise?.[0]?.split('T')[1] ?? '--';
-    const set  = d.daily?.sunset?.[0]?.split('T')[1] ?? '--';
-
     document.getElementById('w-temp').textContent = Math.round(w.temperature) + '°C';
-    document.getElementById('w-cond').textContent = desc;
-    document.getElementById('w-hum').textContent  = hum + '%';
-    document.getElementById('w-wind').textContent = wind + ' km/h';
-    document.getElementById('w-rise').textContent = rise;
-    document.getElementById('w-set').textContent  = set;
-
+    document.getElementById('w-cond').textContent = codes[w.weathercode] || 'CLEAR';
+    document.getElementById('w-hum').textContent  = (d.hourly?.relativehumidity_2m?.[0] ?? '--') + '%';
+    document.getElementById('w-wind').textContent = (d.hourly?.windspeed_10m?.[0] ?? '--') + ' km/h';
+    document.getElementById('w-rise').textContent = d.daily?.sunrise?.[0]?.split('T')[1] ?? '--';
+    document.getElementById('w-set').textContent  = d.daily?.sunset?.[0]?.split('T')[1] ?? '--';
     const gr = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
     const gd = await gr.json();
     const city = gd.address?.city || gd.address?.town || gd.address?.village || 'UNKNOWN';
     document.getElementById('w-loc').textContent = city.toUpperCase();
-    logActivity(`WEATHER: ${Math.round(w.temperature)}°C ${desc}`);
+    logActivity(`WEATHER: ${Math.round(w.temperature)}°C ${codes[w.weathercode] || 'CLEAR'}`);
   } catch {
-    document.getElementById('w-cond').textContent = 'LOCATION DENIED';
-    document.getElementById('w-loc').textContent  = 'UNAVAILABLE';
+    document.getElementById('w-cond').textContent = 'UNAVAILABLE';
+    document.getElementById('w-loc').textContent  = 'LOCATION DENIED';
   }
 }
 
 // ── GAUGES ────────────────────────────────────────────
 function drawGauges() {
-  drawArcGauge('gauge-cpu', Math.floor(20 + Math.random() * 60), '#00cfff', 'CPU');
-  drawArcGauge('gauge-ram', Math.floor(35 + Math.random() * 45), '#00aaff', 'RAM');
+  drawArc('gauge-cpu', Math.floor(20 + Math.random() * 60), '#00cfff');
+  drawArc('gauge-ram', Math.floor(35 + Math.random() * 45), '#00aaff');
 }
-
-function drawArcGauge(id, val, color, label) {
-  const canvas = document.getElementById(id);
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  const cx = W / 2, cy = H / 2, r = W / 2 - 8;
+function drawArc(id, val, color) {
+  const c = document.getElementById(id); if (!c) return;
+  const ctx = c.getContext('2d'), W = c.width, H = c.height, cx = W/2, cy = H/2, r = W/2-8;
   ctx.clearRect(0, 0, W, H);
-
-  // Background arc
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0.75 * Math.PI, 2.25 * Math.PI);
-  ctx.strokeStyle = '#0a2030';
-  ctx.lineWidth = 8;
-  ctx.lineCap = 'round';
-  ctx.stroke();
-
-  // Value arc
-  const end = 0.75 * Math.PI + (val / 100) * 1.5 * Math.PI;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0.75 * Math.PI, end);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 8;
-  ctx.lineCap = 'round';
-  ctx.stroke();
-
-  // Text
-  ctx.fillStyle = color;
-  ctx.font = `bold 14px Orbitron, monospace`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(val + '%', cx, cy);
+  ctx.beginPath(); ctx.arc(cx,cy,r, 0.75*Math.PI, 2.25*Math.PI);
+  ctx.strokeStyle='#0a2030'; ctx.lineWidth=8; ctx.lineCap='round'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,r, 0.75*Math.PI, 0.75*Math.PI+(val/100)*1.5*Math.PI);
+  ctx.strokeStyle=color; ctx.lineWidth=8; ctx.lineCap='round'; ctx.stroke();
+  ctx.fillStyle=color; ctx.font='bold 13px Orbitron,monospace';
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(val+'%', cx, cy);
 }
 
 // ── ACTIVITY LOG ──────────────────────────────────────
 function logActivity(msg) {
-  const el = document.getElementById('activity-log');
-  if (!el) return;
-  const t = new Date().toLocaleTimeString('en-IN', {
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-  const d = document.createElement('div');
-  d.className = 'log-entry';
+  const el = document.getElementById('activity-log'); if (!el) return;
+  const t = new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false });
+  const d = document.createElement('div'); d.className = 'log-entry';
   d.innerHTML = `<span>${t}</span> ${msg}`;
   el.insertBefore(d, el.firstChild);
   if (el.children.length > 25) el.lastChild.remove();
+}
+
+// ── DATA: BASE44 SAVE/LOAD ────────────────────────────
+async function loadUserData() {
+  // Try Base44 first
+  try {
+    const r = await fetch(DATA_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'load', user_key: USER_KEY })
+    });
+    const json = await r.json();
+    if (json.ok && json.record) {
+      rudraData = {
+        routine: json.record.routine || [],
+        goals:   json.record.goals   || []
+      };
+      // Also sync to localStorage
+      localStorage.setItem(DATA_KEY, JSON.stringify(rudraData));
+      logActivity('DATA: Loaded from cloud');
+      return;
+    }
+  } catch {}
+
+  // Fallback to localStorage
+  try {
+    const local = localStorage.getItem(DATA_KEY);
+    if (local) {
+      rudraData = JSON.parse(local);
+      logActivity('DATA: Loaded from local');
+    }
+  } catch {}
+}
+
+async function saveUserData() {
+  // Always save to localStorage immediately
+  localStorage.setItem(DATA_KEY, JSON.stringify(rudraData));
+
+  // Save to Base44 in background
+  try {
+    await fetch(DATA_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action:   'save',
+        user_key: USER_KEY,
+        data:     { routine: rudraData.routine, goals: rudraData.goals }
+      })
+    });
+    logActivity('DATA: Saved to cloud ✓');
+  } catch {
+    logActivity('DATA: Saved locally only');
+  }
 }
 
 // ── GREETING ──────────────────────────────────────────
@@ -231,15 +257,15 @@ function jarvisGreet() {
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const msg   = `${greet}. I'm Jarvis. How may I assist you?`;
   addMessage(msg, 'jarvis');
-  speakHuman(msg, { emotion: 'warm' });
-  logActivity('BOOT: Jarvis online');
+  speakHuman(msg, 'warm');
+  logActivity('BOOT: Jarvis online · USER: ' + USER_KEY.slice(0,8));
 }
 
 // ── TEXT INPUT ────────────────────────────────────────
 function handleTextInput() {
   const val = textInput.value.trim();
   if (!val) return;
-  inputMode = 'text';
+  voiceMode = false;  // text mode — only write, don't speak
   addMessage(val, 'user');
   textInput.value = '';
   routeCommand(val);
@@ -251,7 +277,7 @@ function routeCommand(cmd) {
   const c = cmd.toLowerCase().trim();
   logActivity(`CMD: ${cmd.slice(0, 32)}`);
 
-  // Rudra
+  // ── Rudra panel ──
   if (/\brudra\b/i.test(c)) {
     openRudra();
     const dm = c.match(/plan\s+my\s+(\w+)/i);
@@ -259,86 +285,130 @@ function routeCommand(cmd) {
       setTimeout(() => { switchTab('schedule'); setSched(capitalize(dm[1])); }, 400);
       return respond(`Opening Rudra and generating your ${capitalize(dm[1])} schedule.`);
     }
-    return respond("Rudra panel is open. Manage your schedule, goals, and progress.");
+    return respond("Rudra panel is open. You can manage your schedule, goals, and progress.");
   }
 
   if (/plan\s+my\s+(\w+)/i.test(c)) {
     const dm = c.match(/plan\s+my\s+(\w+)/i);
-    openRudra(); setTimeout(() => { switchTab('schedule'); setSched(capitalize(dm[1])); }, 400);
+    openRudra();
+    setTimeout(() => { switchTab('schedule'); setSched(capitalize(dm[1])); }, 400);
     return respond(`Generating your ${capitalize(dm[1])} plan.`);
   }
 
   if (/weekly schedule|full week/i.test(c)) {
-    openRudra(); setTimeout(() => { switchTab('schedule'); generateWeekly(); }, 400);
+    openRudra();
+    setTimeout(() => { switchTab('schedule'); generateWeekly(); }, 400);
     return respond("Full weekly schedule is ready.");
   }
 
-  // Sites
-  const sites = {
-    youtube: 'https://www.youtube.com', google: 'https://www.google.com',
-    github: 'https://www.github.com', instagram: 'https://www.instagram.com',
-    twitter: 'https://www.twitter.com', facebook: 'https://www.facebook.com',
-    netflix: 'https://www.netflix.com', spotify: 'https://www.spotify.com',
-    gmail: 'https://mail.google.com', maps: 'https://maps.google.com',
-    wikipedia: 'https://www.wikipedia.org'
+  // ── Open websites — IMPORTANT: must call openSite immediately (not async) ──
+  const siteMap = {
+    youtube:   'https://www.youtube.com',
+    google:    'https://www.google.com',
+    github:    'https://www.github.com',
+    instagram: 'https://www.instagram.com',
+    twitter:   'https://www.twitter.com',
+    facebook:  'https://www.facebook.com',
+    netflix:   'https://www.netflix.com',
+    spotify:   'https://www.spotify.com',
+    gmail:     'https://mail.google.com',
+    maps:      'https://maps.google.com',
+    wikipedia: 'https://www.wikipedia.org',
+    whatsapp:  'https://web.whatsapp.com'
   };
-  for (const [k, url] of Object.entries(sites)) {
-    if (c.includes(k)) { openSite(url, k); return; }
-  }
-  const sm = c.match(/^open\s+(https?:\/\/\S+|www\.\S+|\S+\.\S+)/);
-  if (sm) { openSite(sm[1].startsWith('http') ? sm[1] : 'https://' + sm[1], sm[1]); return; }
 
-  // Play
+  for (const [k, url] of Object.entries(siteMap)) {
+    if (c.includes(k)) {
+      openSiteNow(url, k);
+      return;
+    }
+  }
+
+  const sm = c.match(/^open\s+(https?:\/\/\S+|www\.\S+|\S+\.\S+)/);
+  if (sm) {
+    openSiteNow(sm[1].startsWith('http') ? sm[1] : 'https://' + sm[1], sm[1]);
+    return;
+  }
+
+  // ── Play song ──
   const pm = c.match(/^play\s+(.+)/i);
   if (pm) {
-    openSite(`https://www.youtube.com/results?search_query=${encodeURIComponent(pm[1])}`, 'YouTube');
-    return respond(`Searching YouTube for "${pm[1]}".`);
+    openSiteNow(`https://www.youtube.com/results?search_query=${encodeURIComponent(pm[1])}`, 'YouTube');
+    respond(`Searching YouTube for "${pm[1]}".`);
+    return;
   }
 
-  // Quick queries
+  // ── Quick queries ──
   if (/what.*time|current time|time now/i.test(c)) {
-    const t = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    return respond(`It's ${t}.`);
+    return respond(`It's ${new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit' })}.`);
   }
   if (/date|today/i.test(c)) {
-    return respond(`Today is ${new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`);
+    return respond(`Today is ${new Date().toLocaleDateString('en-IN', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}.`);
   }
   if (/weather/i.test(c)) {
-    const temp = document.getElementById('w-temp').textContent;
-    const cond = document.getElementById('w-cond').textContent;
-    const loc  = document.getElementById('w-loc').textContent;
-    return respond(`It's ${temp} and ${cond.toLowerCase()} in ${loc}.`);
+    const t = document.getElementById('w-temp').textContent;
+    const cd = document.getElementById('w-cond').textContent;
+    const l  = document.getElementById('w-loc').textContent;
+    return respond(`It's ${t} and ${cd.toLowerCase()} in ${l}.`);
   }
   if (/battery/i.test(c)) {
     if (navigator.getBattery) {
-      navigator.getBattery().then(b => respond(`Battery is at ${Math.round(b.level * 100)}%, ${b.charging ? 'currently charging' : 'not charging'}.`));
+      navigator.getBattery().then(b =>
+        respond(`Battery is at ${Math.round(b.level*100)}%, ${b.charging ? 'currently charging' : 'not charging'}.`)
+      );
     } else respond("Battery info isn't accessible from this browser.");
     return;
   }
-  if (/stop mic|stop listening|turn off mic/i.test(c)) { stopMic(); return respond("Microphone off."); }
-  if (/clear|reset chat/i.test(c)) { messagesEl.innerHTML = ''; chatHistory = []; return respond("Chat cleared."); }
+  if (/stop mic|stop listening|turn off mic/i.test(c)) {
+    stopMic();
+    return respond("Microphone off.");
+  }
+  if (/clear|reset chat/i.test(c)) {
+    messagesEl.innerHTML = '';
+    chatHistory = [];
+    return respond("Chat cleared. Ready for new commands.");
+  }
 
-  // → AI
+  // ── Everything else → Kimi AI ──
   askKimi(cmd);
 }
 
-// ── OPEN SITE ─────────────────────────────────────────
-function openSite(url, label) {
+// ── OPEN SITE (synchronous — no async blocking) ───────
+// Called directly, opens immediately before any await
+function openSiteNow(url, label) {
+  // Safest method: create link and click it
   const a = document.createElement('a');
-  a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  respond(`Opening ${label} for you.`);
+  a.href   = url;
+  a.target = '_blank';
+  a.rel    = 'noopener noreferrer';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  respond(`Opening ${label} for you, sir.`);
   logActivity(`OPEN: ${label}`);
 }
-window.openSite = openSite;
+window.openSite = openSiteNow;
 
 // ── KIMI K2.5 AI ──────────────────────────────────────
 async function askKimi(userMsg) {
+  // ── KEY FIX: prevent duplicate calls ──
+  if (isProcessing) {
+    logActivity('AI: Blocked duplicate call');
+    return;
+  }
+  isProcessing = true;
+
+  // Pause mic while AI is working
+  const wasMicActive = micActive;
+  if (recognition && micActive) {
+    try { recognition.stop(); } catch {}
+  }
+
   chatHistory.push({ role: 'user', content: userMsg });
-  if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
+  if (chatHistory.length > 16) chatHistory = chatHistory.slice(-16);
 
   const thinkEl = showThinking();
-  if (aiStatusEl) { aiStatusEl.textContent = 'AI: THINKING...'; }
+  if (aiStatusEl) aiStatusEl.textContent = 'AI: THINKING...';
 
   const msgDiv = document.createElement('div');
   msgDiv.className = 'msg jarvis';
@@ -350,8 +420,8 @@ async function askKimi(userMsg) {
   const payload = JSON.stringify({
     model: KIMI_MODEL,
     messages: [{ role: 'system', content: buildSysPrompt() }, ...chatHistory],
-    max_tokens: 2048,
-    temperature: 1.0,
+    max_tokens: 1024,
+    temperature: 0.85,
     top_p: 1.0,
     stream: true,
     chat_template_kwargs: { thinking: true }
@@ -359,33 +429,33 @@ async function askKimi(userMsg) {
 
   const headers = {
     'Authorization': `Bearer ${KIMI_KEY}`,
-    'Content-Type': 'application/json',
-    'Accept': 'text/event-stream'
+    'Content-Type':  'application/json',
+    'Accept':        'text/event-stream'
   };
 
   try {
-    let response;
+    // Try multiple CORS proxies
+    const proxies = [
+      KIMI_URL,  // direct (works in some browsers)
+      `https://corsproxy.io/?url=${encodeURIComponent(KIMI_URL)}`,
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(KIMI_URL)}`
+    ];
 
-    // Try direct first
-    try {
-      response = await fetch(KIMI_URL, { method: 'POST', headers, body: payload });
-      if (!response.ok) throw new Error(`${response.status}`);
-    } catch (e1) {
-      // Fallback to CORS proxy
+    let response = null;
+    for (const url of proxies) {
       try {
-        response = await fetch(PROXY_URL, { method: 'POST', headers, body: payload });
-        if (!response.ok) throw new Error(`proxy ${response.status}`);
-      } catch (e2) {
-        throw new Error('Both direct and proxy failed. Check network / API key.');
-      }
+        const r = await fetch(url, { method: 'POST', headers, body: payload });
+        if (r.ok) { response = r; break; }
+      } catch {}
     }
+
+    if (!response) throw new Error('All endpoints failed');
 
     removeThinking(thinkEl);
 
     const reader  = response.body.getReader();
     const decoder = new TextDecoder();
     let buf = '';
-    let hasContent = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -396,21 +466,14 @@ async function askKimi(userMsg) {
 
       for (const line of lines) {
         const t = line.trim();
-        if (!t || t === 'data: [DONE]') continue;
-        if (!t.startsWith('data: ')) continue;
+        if (!t || t === 'data: [DONE]' || !t.startsWith('data: ')) continue;
         try {
-          const j = JSON.parse(t.slice(6));
+          const j     = JSON.parse(t.slice(6));
           const delta = j.choices?.[0]?.delta;
           if (!delta) continue;
-
-          // Kimi thinking tokens
-          if (delta.reasoning_content) {
-            showReasoning(msgDiv, delta.reasoning_content);
-          }
-
+          if (delta.reasoning_content) showReasoning(msgDiv, delta.reasoning_content);
           if (delta.content) {
             fullText += delta.content;
-            hasContent = true;
             streamText(msgDiv, fullText);
             messagesEl.parentElement.scrollTop = messagesEl.parentElement.scrollHeight;
           }
@@ -418,25 +481,36 @@ async function askKimi(userMsg) {
       }
     }
 
-    // Finalize
+    // Finalize message
     msgDiv.innerHTML = fmtText(fullText);
     chatHistory.push({ role: 'assistant', content: fullText });
     logActivity(`AI: ${fullText.length}ch reply`);
 
-    // Speak with emotion
-    const emotion = detectEmotion(fullText);
-    speakHuman(fullText.replace(/<[^>]*>/g, '').slice(0, 600), { emotion });
+    // Only speak if voice mode is active
+    if (voiceMode) {
+      speakHuman(fullText.replace(/<[^>]*>/g, '').slice(0, 600), detectEmotion(fullText));
+    }
 
   } catch (err) {
     removeThinking(thinkEl);
-    const errMsg = "I'm having a bit of trouble reaching my neural network right now. Please check your connection and try again.";
+    const errMsg = "I couldn't reach my neural network. Please check your internet connection.";
     msgDiv.innerHTML = fmtText(errMsg);
-    speakHuman(errMsg, { emotion: 'calm' });
+    if (voiceMode) speakHuman(errMsg, 'calm');
     logActivity(`AI ERROR: ${err.message}`);
     console.error('Kimi error:', err);
   }
 
   if (aiStatusEl) aiStatusEl.textContent = 'AI: KIMI K2.5';
+  isProcessing = false;
+
+  // Resume mic after AI is done
+  if (wasMicActive && micActive) {
+    setTimeout(() => {
+      if (micActive && !isSpeaking) {
+        try { recognition.start(); } catch {}
+      }
+    }, 500);
+  }
 }
 
 function buildSysPrompt() {
@@ -447,7 +521,7 @@ function buildSysPrompt() {
   }
   if (rudraData.goals.length > 0) {
     p += '\nUser learning goals:\n';
-    rudraData.goals.forEach(g => { p += `- ${g.name} (${g.duration}, ${g.progress || 0}% complete)\n`; });
+    rudraData.goals.forEach(g => { p += `- ${g.name} (${g.duration}, ${g.progress||0}% complete)\n`; });
   }
   return p;
 }
@@ -468,11 +542,11 @@ function showReasoning(container, token) {
 
 function fmtText(t) {
   return t
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code>$1</code>')
-    .replace(/\n/g, '<br>');
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/`(.+?)`/g,'<code>$1</code>')
+    .replace(/\n/g,'<br>');
 }
 
 function showThinking() {
@@ -486,9 +560,10 @@ function showThinking() {
 function removeThinking(el) { if (el?.parentNode) el.parentNode.removeChild(el); }
 
 // ── RESPOND ───────────────────────────────────────────
+// Write always. Speak only if voiceMode is ON.
 function respond(text, emotion = 'neutral') {
   addMessage(text, 'jarvis');
-  speakHuman(text, { emotion });
+  if (voiceMode) speakHuman(text, emotion);
   logActivity(`JARVIS: ${text.slice(0, 28)}`);
 }
 
@@ -502,82 +577,67 @@ function addMessage(text, role) {
 }
 
 // ── HUMAN VOICE ───────────────────────────────────────
-// Emotions: warm | excited | serious | calm | question | neutral
-function speakHuman(text, { emotion = 'neutral', maxLen = 550 } = {}) {
+function speakHuman(text, emotion = 'neutral') {
   if (!window.speechSynthesis) return;
   stopSpeech();
 
-  const clean = text.replace(/<[^>]*>/g, '').replace(/[#*`]/g, '').slice(0, maxLen);
+  const clean = text.replace(/<[^>]*>/g, '').replace(/[#*`]/g, '').slice(0, 500);
   if (!clean.trim()) return;
 
-  // Split into sentences for more natural delivery
-  const sentences = clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [clean];
+  // Split into sentences for natural delivery
+  const sentences = clean.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [clean];
   let idx = 0;
 
-  function speakNext() {
+  function next() {
     if (idx >= sentences.length) {
       isSpeaking = false;
-      if (micActive) { try { recognition.start(); } catch {} }
+      // Resume mic after speaking finishes
+      if (micActive && !isProcessing) {
+        setTimeout(() => {
+          try { recognition.start(); } catch {}
+        }, 300);
+      }
       return;
     }
+    const s = sentences[idx++].trim();
+    if (!s) { next(); return; }
 
-    const sentence = sentences[idx++].trim();
-    if (!sentence) { speakNext(); return; }
-
-    const utter = new SpeechSynthesisUtterance(sentence);
+    const utter = new SpeechSynthesisUtterance(s);
     if (voice) utter.voice = voice;
-    utter.lang = 'en-GB';
+    utter.lang   = 'en-GB';
     utter.volume = 1;
 
-    // Detect per-sentence emotion
-    const e = detectEmotion(sentence);
-
-    switch (e) {
-      case 'excited':
-        utter.rate  = 1.05;
-        utter.pitch = 1.0;
-        break;
-      case 'serious':
-      case 'warning':
-        utter.rate  = 0.88;
-        utter.pitch = 0.82;
-        break;
-      case 'warm':
-        utter.rate  = 0.92;
-        utter.pitch = 0.9;
-        break;
-      case 'question':
-        utter.rate  = 0.95;
-        utter.pitch = 0.92;
-        break;
-      case 'calm':
-        utter.rate  = 0.90;
-        utter.pitch = 0.85;
-        break;
-      default:
-        utter.rate  = 0.93;
-        utter.pitch = 0.87;
-    }
+    // Per-sentence emotion
+    const e = detectEmotion(s);
+    if      (e === 'excited') { utter.rate = 1.02; utter.pitch = 0.95; }
+    else if (e === 'warning') { utter.rate = 0.86; utter.pitch = 0.80; }
+    else if (e === 'warm')    { utter.rate = 0.90; utter.pitch = 0.90; }
+    else if (e === 'question'){ utter.rate = 0.93; utter.pitch = 0.92; }
+    else if (e === 'calm')    { utter.rate = 0.88; utter.pitch = 0.85; }
+    else                      { utter.rate = 0.92; utter.pitch = 0.87; }
 
     utter.onstart = () => {
       isSpeaking = true;
-      if (recognition && micActive) { try { recognition.stop(); } catch {} }
+      // Stop mic while speaking — prevents feedback
+      if (recognition && micActive) {
+        try { recognition.stop(); } catch {}
+      }
     };
-    utter.onend  = () => { speakNext(); };
-    utter.onerror = () => { isSpeaking = false; speakNext(); };
+    utter.onend   = () => { next(); };
+    utter.onerror = () => { isSpeaking = false; next(); };
 
     window.speechSynthesis.speak(utter);
   }
 
-  speakNext();
+  next();
 }
 
 function detectEmotion(text) {
   if (/\?/.test(text)) return 'question';
   if (/warning|error|fail|cannot|denied|alert|critical/i.test(text)) return 'warning';
-  if (/great|perfect|done|ready|online|excellent|awesome|absolutely/i.test(text)) return 'excited';
-  if (/morning|evening|afternoon|hello|welcome/i.test(text)) return 'warm';
-  if (/sorry|trouble|unfortunately|issue|problem/i.test(text)) return 'calm';
+  if (/great|perfect|done|ready|online|excellent|awesome|absolutely|wonderful/i.test(text)) return 'excited';
+  if (/morning|evening|afternoon|hello|welcome|assist/i.test(text)) return 'warm';
+  if (/sorry|trouble|unfortunately|issue|problem|couldn't/i.test(text)) return 'calm';
   return 'neutral';
 }
 
@@ -586,7 +646,7 @@ function stopSpeech() {
   isSpeaking = false;
 }
 
-// ── MIC ───────────────────────────────────────────────
+// ── MIC TOGGLE ────────────────────────────────────────
 function toggleMic() {
   micActive ? stopMic() : startMic();
 }
@@ -594,51 +654,80 @@ window.toggleMic = toggleMic;
 
 function startMic() {
   if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-    respond("Speech recognition isn't supported in this browser. Please use Chrome.");
+    addMessage("Speech recognition requires Chrome browser.", 'jarvis');
     return;
   }
+
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SR();
-  recognition.continuous = true;
+  recognition.continuous    = false;  // ← KEY FIX: single result, then restart manually
   recognition.interimResults = false;
-  recognition.lang = 'en-IN';
+  recognition.lang           = 'en-IN';
+  recognition.maxAlternatives = 1;
 
   recognition.onstart = () => {
-    micActive = true; inputMode = 'voice';
+    micActive  = true;
+    voiceMode  = true;
     micBtn.classList.add('active');
     micLabel.textContent = 'LISTENING...';
     micSt.textContent    = 'Click to stop';
-    document.getElementById('voice-state') &&
-      (document.getElementById('voice-state').textContent = 'ACTIVE');
-    logActivity('MIC: Activated');
+    logActivity('MIC: Active');
   };
 
   recognition.onresult = e => {
-    const t = Array.from(e.results).slice(e.resultIndex).map(r => r[0].transcript).join('').trim();
-    if (!t) return;
+    if (!micActive) return;
+
+    const transcript = e.results[0]?.[0]?.transcript?.trim();
+    if (!transcript) return;
+
+    logActivity(`HEARD: ${transcript.slice(0,30)}`);
+
+    // If Jarvis is speaking, stop it first
     if (isSpeaking) stopSpeech();
-    addMessage(t, 'user');
-    routeCommand(t);
+
+    // If AI is already processing, skip this result
+    if (isProcessing) {
+      logActivity('MIC: Skipped (AI busy)');
+      return;
+    }
+
+    addMessage(transcript, 'user');
+    routeCommand(transcript);
   };
 
   recognition.onerror = e => {
-    if (e.error === 'not-allowed') { respond("Microphone access denied."); stopMic(); }
+    if (e.error === 'not-allowed') {
+      addMessage("Microphone access denied. Please allow mic permission.", 'jarvis');
+      stopMic();
+    } else if (e.error === 'no-speech') {
+      // Normal — just restart
+    }
+    logActivity(`MIC ERR: ${e.error}`);
   };
 
   recognition.onend = () => {
-    if (micActive) { try { recognition.start(); } catch {} }
+    // Auto-restart ONLY if mic is still supposed to be active AND not speaking AND not processing
+    if (micActive && !isSpeaking && !isProcessing) {
+      setTimeout(() => {
+        if (micActive) {
+          try { recognition.start(); }
+          catch { logActivity('MIC: restart failed'); }
+        }
+      }, 400);
+    }
   };
 
   recognition.start();
 }
 
 function stopMic() {
-  micActive = false; inputMode = 'text';
+  micActive  = false;
+  voiceMode  = false;
   if (recognition) { try { recognition.stop(); } catch {} }
   micBtn.classList.remove('active');
   micLabel.textContent = 'TAP TO SPEAK';
   micSt.textContent    = 'Microphone OFF';
-  logActivity('MIC: Deactivated');
+  logActivity('MIC: Stopped');
 }
 
 // ── BOTTOM TABS ───────────────────────────────────────
@@ -662,7 +751,9 @@ window.setAlarm = function() {
     if (cur === t) {
       clearInterval(alarmTimer);
       document.getElementById('alarm-st').textContent = '⚡ TRIGGERED!';
-      respond("Your alarm is going off, sir. Time to get moving.");
+      const msg = "Sir, your alarm is going off. Time to get moving.";
+      addMessage(msg, 'jarvis');
+      speakHuman(msg, 'excited');
       logActivity('ALARM: TRIGGERED');
     }
   }, 10000);
@@ -681,16 +772,18 @@ window.fetchJoke = async function() {
   }
 };
 
-// ── QUICK ─────────────────────────────────────────────
+// ── QUICK BUTTONS ─────────────────────────────────────
 window.qCmd = function(cmd) {
-  ({ time: () => respond(`It's ${new Date().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'})}.`),
-     weather: () => routeCommand('weather'),
-     yt: () => openSite('https://www.youtube.com', 'YouTube'),
-     joke: () => fetchJoke()
-  })[cmd]?.();
+  const map = {
+    time:    () => respond(`It's ${new Date().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'})}.`),
+    weather: () => routeCommand('weather'),
+    yt:      () => openSiteNow('https://www.youtube.com', 'YouTube'),
+    joke:    () => fetchJoke()
+  };
+  if (map[cmd]) map[cmd]();
 };
 
-// ── RUDRA ─────────────────────────────────────────────
+// ── RUDRA PANEL ───────────────────────────────────────
 function openRudra() {
   document.getElementById('rudra-panel').classList.remove('hidden');
   document.getElementById('overlay').classList.remove('hidden');
@@ -708,61 +801,73 @@ function switchTab(tab) {
 }
 window.switchTab = switchTab;
 
-// ── DATA ──────────────────────────────────────────────
-function loadData() {
-  try { return JSON.parse(localStorage.getItem(DATA_KEY)) || { routine:[], goals:[] }; }
-  catch { return { routine:[], goals:[] }; }
-}
-function saveData() { localStorage.setItem(DATA_KEY, JSON.stringify(rudraData)); }
-
+// ── ROUTINE ───────────────────────────────────────────
 window.addRoutine = function() {
   const time = document.getElementById('routine-time').value.trim();
   const task = document.getElementById('routine-task').value.trim();
-  if (!time||!task) return;
+  if (!time || !task) return;
   rudraData.routine.push({ id: Date.now(), time, task });
-  saveData(); renderRoutine();
+  saveUserData(); renderRoutine();
   document.getElementById('routine-time').value = '';
   document.getElementById('routine-task').value = '';
 };
+
 function renderRoutine() {
   const el = document.getElementById('routine-list'); el.innerHTML = '';
-  [...rudraData.routine].sort((a,b)=>a.time.localeCompare(b.time)).forEach(r => {
-    el.innerHTML += `<div class="entry-item"><span class="et">${r.time} — ${r.task}</span>
+  [...rudraData.routine].sort((a,b) => a.time.localeCompare(b.time)).forEach(r => {
+    el.innerHTML += `<div class="entry-item">
+      <span class="et">${r.time} — ${r.task}</span>
       <button class="eb" onclick="editRoutine(${r.id})">✏️</button>
-      <button class="ed" onclick="delRoutine(${r.id})">🗑</button></div>`;
+      <button class="ed" onclick="delRoutine(${r.id})">🗑</button>
+    </div>`;
   });
 }
-window.delRoutine  = function(id) { rudraData.routine = rudraData.routine.filter(r=>r.id!==id); saveData(); renderRoutine(); };
+
+window.delRoutine  = function(id) {
+  rudraData.routine = rudraData.routine.filter(r => r.id !== id);
+  saveUserData(); renderRoutine();
+};
 window.editRoutine = function(id) {
-  const i = rudraData.routine.find(r=>r.id===id); if(!i) return;
+  const i = rudraData.routine.find(r => r.id === id); if (!i) return;
   const t = prompt('Time:', i.time); const k = prompt('Task:', i.task);
-  if(t!==null) i.time=t.trim(); if(k!==null) i.task=k.trim();
-  saveData(); renderRoutine();
+  if (t !== null) i.time = t.trim();
+  if (k !== null) i.task = k.trim();
+  saveUserData(); renderRoutine();
 };
 
+// ── GOALS ─────────────────────────────────────────────
 window.addGoal = function() {
   const name = document.getElementById('goal-name').value.trim();
   const dur  = document.getElementById('goal-duration').value.trim();
-  if (!name||!dur) return;
+  if (!name || !dur) return;
   rudraData.goals.push({ id: Date.now(), name, duration: dur, progress: 0 });
-  saveData(); renderGoals(); renderProgress();
-  document.getElementById('goal-name').value = '';
+  saveUserData(); renderGoals(); renderProgress();
+  document.getElementById('goal-name').value     = '';
   document.getElementById('goal-duration').value = '';
 };
+
 function renderGoals() {
   const el = document.getElementById('goals-list'); el.innerHTML = '';
   rudraData.goals.forEach(g => {
-    el.innerHTML += `<div class="entry-item"><span class="et">${g.name}</span><span class="em">${g.duration}</span>
+    el.innerHTML += `<div class="entry-item">
+      <span class="et">${g.name}</span>
+      <span class="em">${g.duration}</span>
       <button class="eb" onclick="editGoal(${g.id})">✏️</button>
-      <button class="ed" onclick="delGoal(${g.id})">🗑</button></div>`;
+      <button class="ed" onclick="delGoal(${g.id})">🗑</button>
+    </div>`;
   });
 }
-window.delGoal  = function(id) { rudraData.goals = rudraData.goals.filter(g=>g.id!==id); saveData(); renderGoals(); renderProgress(); };
+
+window.delGoal  = function(id) {
+  rudraData.goals = rudraData.goals.filter(g => g.id !== id);
+  saveUserData(); renderGoals(); renderProgress();
+};
 window.editGoal = function(id) {
-  const i = rudraData.goals.find(g=>g.id===id); if(!i) return;
+  const i = rudraData.goals.find(g => g.id === id); if (!i) return;
   const n = prompt('Goal:', i.name); const d = prompt('Duration:', i.duration);
-  if(n!==null) i.name=n.trim(); if(d!==null) i.duration=d.trim();
-  saveData(); renderGoals(); renderProgress();
+  if (n !== null) i.name = n.trim();
+  if (d !== null) i.duration = d.trim();
+  saveUserData(); renderGoals(); renderProgress();
 };
 
 // ── SCHEDULE ──────────────────────────────────────────
@@ -773,7 +878,7 @@ function setSched(day) {
 }
 
 window.generateSchedule = function() {
-  const day = document.getElementById('schedule-day').value;
+  const day   = document.getElementById('schedule-day').value;
   const slots = buildDay(day);
   document.getElementById('schedule-output').innerHTML =
     `<h4 style="color:#ff6b00;margin-bottom:6px;font-size:11px;letter-spacing:2px;">${day.toUpperCase()}</h4>` + buildTable(slots);
@@ -800,50 +905,69 @@ function buildDay(day) {
     });
   }
   if (rudraData.routine.length === 0) {
-    slots.push({time:'6:00 AM',task:'Wake up'},{time:'7:00 AM',task:'Exercise'},{time:'8:00 AM',task:'Breakfast'});
-    if (!isWE) slots.push({time:'9:00 AM–5:00 PM',task:'College / Work'});
-    slots.push({time:'9:00 PM',task:'Wind down'},{time:'10:30 PM',task:'Sleep'});
+    slots.push(
+      { time:'6:00 AM', task:'Wake up & Morning Routine' },
+      { time:'7:00 AM', task:'Exercise / Yoga' },
+      { time:'8:00 AM', task:'Breakfast' }
+    );
+    if (!isWE) slots.push({ time:'9:00 AM–5:00 PM', task:'College / Work' });
+    slots.push(
+      { time:'9:00 PM',  task:'Wind down / Read' },
+      { time:'10:30 PM', task:'Sleep' }
+    );
   }
-  slots.sort((a,b) => {
+  slots.sort((a, b) => {
     const f = t => {
-      const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i); if(!m) return 9999;
+      const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i); if (!m) return 9999;
       let h = parseInt(m[1]);
-      if(m[3].toUpperCase()==='PM'&&h!==12) h+=12;
-      if(m[3].toUpperCase()==='AM'&&h===12) h=0;
-      return h*60+parseInt(m[2]);
+      if (m[3].toUpperCase() === 'PM' && h !== 12) h += 12;
+      if (m[3].toUpperCase() === 'AM' && h === 12) h = 0;
+      return h * 60 + parseInt(m[2]);
     };
-    return f(a.time)-f(b.time);
+    return f(a.time) - f(b.time);
   });
   return slots;
 }
 
 function buildTable(slots) {
   return `<table class="st"><thead><tr><th>TIME</th><th>TASK</th></tr></thead><tbody>` +
-    slots.map(s=>`<tr><td contenteditable="true">${s.time}</td><td contenteditable="true">${s.task}</td></tr>`).join('') +
+    slots.map(s => `<tr><td contenteditable="true">${s.time}</td><td contenteditable="true">${s.task}</td></tr>`).join('') +
     `</tbody></table>`;
 }
 
 // ── PROGRESS ──────────────────────────────────────────
 function renderProgress() {
   const el = document.getElementById('progress-list'); el.innerHTML = '';
-  if (!rudraData.goals.length) { el.innerHTML = '<p style="color:#336688;font-size:10px;">No goals yet. Add in Agheera tab.</p>'; return; }
+  if (!rudraData.goals.length) {
+    el.innerHTML = '<p style="color:#336688;font-size:10px;padding:4px">No goals yet. Add them in the Agheera tab.</p>';
+    return;
+  }
   rudraData.goals.forEach(g => {
     const pct = g.progress || 0;
     el.innerHTML += `<div class="pi">
-      <div class="ph"><span class="pt">${g.name} <small style="color:#336688">(${g.duration})</small></span><span class="pp" id="ph-${g.id}">${pct}%</span></div>
+      <div class="ph">
+        <span class="pt">${g.name} <small style="color:#336688">(${g.duration})</small></span>
+        <span class="pp" id="ph-${g.id}">${pct}%</span>
+      </div>
       <div class="pb-bg"><div class="pb-fill" id="pb-${g.id}" style="width:${pct}%"></div></div>
-      <div class="pc"><input type="range" min="0" max="100" value="${pct}" oninput="updateProg(${g.id},this.value)"/>
-      <span style="font-size:10px;color:#336688" id="pp-${g.id}">${pct}%</span></div></div>`;
+      <div class="pc">
+        <input type="range" min="0" max="100" value="${pct}" oninput="updateProg(${g.id},this.value)"/>
+        <span style="font-size:10px;color:#336688" id="pp-${g.id}">${pct}%</span>
+      </div>
+    </div>`;
   });
 }
+
 window.updateProg = function(id, val) {
-  const g = rudraData.goals.find(g=>g.id===id); if(!g) return;
-  g.progress = parseInt(val); saveData();
-  ['pb','pp','ph'].forEach(p => {
-    const el = document.getElementById(`${p}-${g.id}`);
-    if (!el) return;
-    if (p==='pb') el.style.width=val+'%'; else el.textContent=val+'%';
-  });
+  const g = rudraData.goals.find(g => g.id === id); if (!g) return;
+  g.progress = parseInt(val);
+  saveUserData();
+  const pb = document.getElementById(`pb-${g.id}`);
+  const pp = document.getElementById(`pp-${g.id}`);
+  const ph = document.getElementById(`ph-${g.id}`);
+  if (pb) pb.style.width = val + '%';
+  if (pp) pp.textContent = val + '%';
+  if (ph) ph.textContent = val + '%';
 };
 
 function renderAll() { renderRoutine(); renderGoals(); renderProgress(); }
