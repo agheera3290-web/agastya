@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>JARVIS + RUDRA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>RUDRA AI</title>
   <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
@@ -12,10 +12,10 @@
 <div id="topbar">
   <div id="tb-left">
     <div id="shield-badge">
-      <div id="shield-icon">🛡</div>
+      <div id="shield-icon">⚡</div>
       <div>
-        <div id="shield-title">J.A.R.V.I.S OS</div>
-        <div id="shield-sub">ver 2.0 · RUDRA</div>
+        <div id="shield-title">R.U.D.R.A OS</div>
+        <div id="shield-sub">ver 3.0 · LEARNING AI</div>
       </div>
     </div>
   </div>
@@ -36,14 +36,17 @@
   <!-- LEFT SIDEBAR -->
   <div id="left-sidebar">
     <div class="sb-section">
-      <div class="sb-item" onclick="openSite('https://youtube.com','YouTube')">▶ YouTube</div>
-      <div class="sb-item" onclick="openSite('https://google.com','Google')">🔍 Google</div>
-      <div class="sb-item" onclick="openSite('https://github.com','GitHub')">🐙 GitHub</div>
-      <div class="sb-item" onclick="openSite('https://instagram.com','Instagram')">📷 Instagram</div>
-      <div class="sb-item" onclick="openSite('https://twitter.com','Twitter')">🐦 Twitter</div>
-      <div class="sb-item" onclick="openSite('https://mail.google.com','Gmail')">✉ Gmail</div>
-      <div class="sb-item" onclick="openSite('https://netflix.com','Netflix')">🎬 Netflix</div>
-      <div class="sb-item" onclick="openSite('https://spotify.com','Spotify')">🎵 Spotify</div>
+      <div class="sb-label">// QUICK LAUNCH</div>
+      <div class="sb-item" onclick="openURL('https://youtube.com','YouTube')">▶ YouTube</div>
+      <div class="sb-item" onclick="openURL('https://google.com','Google')">🔍 Google</div>
+      <div class="sb-item" onclick="openURL('https://github.com','GitHub')">🐙 GitHub</div>
+      <div class="sb-item" onclick="openURL('https://instagram.com','Instagram')">📷 Instagram</div>
+      <div class="sb-item" onclick="openURL('https://twitter.com','X/Twitter')">🐦 Twitter</div>
+      <div class="sb-item" onclick="openURL('https://mail.google.com','Gmail')">✉ Gmail</div>
+      <div class="sb-item" onclick="openURL('https://netflix.com','Netflix')">🎬 Netflix</div>
+      <div class="sb-item" onclick="openURL('https://open.spotify.com','Spotify')">🎵 Spotify</div>
+      <div class="sb-item" onclick="openURL('https://web.whatsapp.com','WhatsApp')">💬 WhatsApp</div>
+      <div class="sb-item" onclick="openURL('https://reddit.com','Reddit')">🤖 Reddit</div>
     </div>
 
     <div class="sb-section" style="margin-top:10px">
@@ -57,46 +60,47 @@
         <div>UPTIME: <span id="uptime-val">00:00:00</span></div>
       </div>
     </div>
+
+    <div class="sb-section" style="margin-top:10px">
+      <div class="sb-label">// RUDRA BRAIN</div>
+      <div class="sys-stats">
+        <div>SESSIONS: <span id="brain-sessions">0</span></div>
+        <div>LEARNED: <span id="brain-facts">0</span> facts</div>
+        <div>LEVEL: <span id="brain-level">LEARNING</span></div>
+      </div>
+    </div>
   </div>
 
   <!-- CENTER -->
   <div id="center">
 
-    <!-- ARC REACTOR + CLOCK -->
+    <!-- ARC REACTOR -->
     <div id="arc-section">
       <div id="arc-outer">
-        <!-- SVG rings -->
         <svg id="arc-svg" viewBox="0 0 400 400">
-          <!-- Outer rings -->
           <circle cx="200" cy="200" r="192" fill="none" stroke="#00cfff11" stroke-width="1"/>
           <circle cx="200" cy="200" r="185" fill="none" stroke="#00cfff33" stroke-width="0.5" stroke-dasharray="3 5"/>
           <circle cx="200" cy="200" r="175" fill="none" stroke="#00cfff" stroke-width="1.5" stroke-dasharray="400 60" stroke-linecap="round"/>
           <circle cx="200" cy="200" r="162" fill="none" stroke="#00cfff55" stroke-width="1" stroke-dasharray="6 8"/>
           <circle cx="200" cy="200" r="150" fill="none" stroke="#00cfff88" stroke-width="0.8" stroke-dasharray="2 4"/>
-          <!-- Tick marks -->
           <circle cx="200" cy="200" r="140" fill="none" stroke="#00cfff22" stroke-width="12" stroke-dasharray="2 12"/>
           <circle cx="200" cy="200" r="128" fill="none" stroke="#00cfff44" stroke-width="8" stroke-dasharray="1 8"/>
-          <!-- Inner rings -->
           <circle cx="200" cy="200" r="110" fill="none" stroke="#00cfff66" stroke-width="1.5" stroke-dasharray="200 40"/>
           <circle cx="200" cy="200" r="95"  fill="none" stroke="#00cfff33" stroke-width="1"/>
           <circle cx="200" cy="200" r="80"  fill="none" stroke="#00cfff" stroke-width="2" stroke-dasharray="15 300" stroke-linecap="round" id="rot-inner"/>
           <circle cx="200" cy="200" r="65"  fill="none" stroke="#00cfff44" stroke-width="6" stroke-dasharray="1 10"/>
-          <!-- Glow core -->
           <circle cx="200" cy="200" r="48"  fill="#001a2a" stroke="#00cfff" stroke-width="2"/>
           <circle cx="200" cy="200" r="38"  fill="#00cfff08" stroke="#00cfff66" stroke-width="1"/>
-          <!-- Rotating sweep -->
           <circle cx="200" cy="200" r="175" fill="none" stroke="#00cfff" stroke-width="3" stroke-dasharray="40 1100" stroke-linecap="round" id="rot-sweep"/>
         </svg>
-
-        <!-- Clock inside arc -->
         <div id="arc-clock">
           <div id="arc-time"></div>
           <div id="arc-date"></div>
-          <div id="arc-num">41</div>
+          <div id="arc-num">RUDRA</div>
         </div>
       </div>
 
-      <!-- MIC BUTTON below arc -->
+      <!-- MIC -->
       <div id="mic-area">
         <button id="mic-btn" onclick="toggleMic()" title="Tap to speak">
           <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
@@ -108,21 +112,25 @@
         </button>
         <div id="mic-label">TAP TO SPEAK</div>
         <div id="mic-status-line">Microphone OFF</div>
+        <!-- Mobile push-to-talk -->
+        <button id="ptt-btn" ontouchstart="pttStart()" ontouchend="pttEnd()" onmousedown="pttStart()" onmouseup="pttEnd()">
+          🎙 HOLD TO TALK
+        </button>
       </div>
     </div>
 
     <!-- CHAT -->
     <div id="chat-panel">
       <div id="chat-header">
-        <span class="hdr-label">// INTERFACE <span id="iface-status" class="cyan">●ACTIVE</span></span>
-        <span id="ai-status-badge">AI: KIMI K2.5</span>
+        <span class="hdr-label">// RUDRA AI <span id="iface-status" class="cyan">●ACTIVE</span></span>
+        <span id="ai-status-badge">AI: GPT-OSS-120B</span>
       </div>
       <div id="chat-area">
         <div id="messages"></div>
       </div>
       <div id="input-row">
-        <input type="text" id="text-input" placeholder="TYPE A COMMAND HERE..." autocomplete="off"/>
-        <button id="send-btn" onclick="handleTextInput()">SEND</button>
+        <input type="text" id="text-input" placeholder="TYPE A COMMAND..." autocomplete="off"/>
+        <button id="send-btn" onclick="sendText()">SEND</button>
       </div>
     </div>
 
@@ -132,20 +140,18 @@
       <button class="btab" onclick="btabClick(this,'batt')">BATT</button>
       <button class="btab" onclick="btabClick(this,'alarm')">ALARM</button>
       <button class="btab" onclick="btabClick(this,'joke')">JOKE</button>
-      <button class="btab" onclick="openRudra()">RUDRA</button>
+      <button class="btab" onclick="openRudraPanel()">PANEL</button>
     </div>
     <div id="btab-content">
       <div id="btab-time" class="btab-pane"><span id="btab-clock"></span>&nbsp;|&nbsp;<span id="btab-datestr"></span></div>
       <div id="btab-batt" class="btab-pane hidden">Battery: <span id="btab-batt-val">--%</span> | <span id="btab-batt-st">--</span></div>
       <div id="btab-alarm" class="btab-pane hidden"><input type="time" id="alarm-time"/> <button onclick="setAlarm()">SET</button> <span id="alarm-st"></span></div>
-      <div id="btab-joke" class="btab-pane hidden"><button onclick="fetchJoke()">GET JOKE</button> <span id="joke-text"></span></div>
+      <div id="btab-joke" class="btab-pane hidden"><button onclick="fetchJoke()">GET JOKE</button> <span id="joke-text" style="margin-left:8px;font-size:10px"></span></div>
     </div>
   </div>
 
   <!-- RIGHT PANEL -->
   <div id="right-panel">
-
-    <!-- Weather -->
     <div class="rp-block">
       <div class="rp-title">// WEATHER</div>
       <div id="w-temp">--°C</div>
@@ -156,29 +162,17 @@
       <div class="w-detail">SUNRISE: <span id="w-rise">--</span></div>
       <div class="w-detail">SUNSET: <span id="w-set">--</span></div>
     </div>
-
-    <!-- Gauges -->
     <div class="rp-block">
       <div class="rp-title">// GAUGES</div>
       <div id="gauges-row">
-        <div class="gauge-wrap">
-          <canvas id="gauge-cpu" width="90" height="90"></canvas>
-          <div class="gauge-lbl">CPU</div>
-        </div>
-        <div class="gauge-wrap">
-          <canvas id="gauge-ram" width="90" height="90"></canvas>
-          <div class="gauge-lbl">RAM</div>
-        </div>
+        <div class="gauge-wrap"><canvas id="gauge-cpu" width="90" height="90"></canvas><div class="gauge-lbl">CPU</div></div>
+        <div class="gauge-wrap"><canvas id="gauge-ram" width="90" height="90"></canvas><div class="gauge-lbl">RAM</div></div>
       </div>
     </div>
-
-    <!-- Activity Log -->
     <div class="rp-block" id="log-block">
       <div class="rp-title">// ACTIVITY LOG</div>
       <div id="activity-log"></div>
     </div>
-
-    <!-- Quick -->
     <div class="rp-block">
       <div class="rp-title">// QUICK</div>
       <div id="quick-grid">
@@ -188,35 +182,98 @@
         <button class="qbtn" onclick="qCmd('joke')">JOKE</button>
       </div>
     </div>
-
   </div>
 </div>
 
-<!-- RUDRA PANEL -->
+<!-- RUDRA PANEL (full overlay) -->
+<div id="overlay" class="hidden" onclick="closeRudraPanel()"></div>
 <div id="rudra-panel" class="hidden">
-  <div id="rudra-hdr"><h2>⚡ RUDRA PANEL</h2><button onclick="closeRudra()">✕</button></div>
+  <div id="rudra-hdr">
+    <h2>⚡ RUDRA PANEL</h2>
+    <button onclick="closeRudraPanel()">✕ CLOSE</button>
+  </div>
   <div id="rudra-tabs">
-    <button class="tab-btn active" data-tab="agheera" onclick="switchTab('agheera')">AGHEERA</button>
+    <button class="tab-btn active" data-tab="agheera" onclick="switchTab('agheera')">MY INFO</button>
     <button class="tab-btn" data-tab="schedule" onclick="switchTab('schedule')">SCHEDULE</button>
     <button class="tab-btn" data-tab="progress" onclick="switchTab('progress')">PROGRESS</button>
+    <button class="tab-btn" data-tab="brain" onclick="switchTab('brain')">BRAIN</button>
   </div>
-  <div id="tab-agheera" class="tab-content active">
-    <div class="rb"><div class="rb-title">📅 DAILY ROUTINE</div><div id="routine-list"></div>
-      <div class="add-row"><input id="routine-time" placeholder="Time"/><input id="routine-task" placeholder="Activity"/><button onclick="addRoutine()">+ADD</button></div></div>
-    <div class="rb"><div class="rb-title">🎯 LEARNING GOALS</div><div id="goals-list"></div>
-      <div class="add-row"><input id="goal-name" placeholder="Goal"/><input id="goal-duration" placeholder="Duration"/><button onclick="addGoal()">+ADD</button></div></div>
+
+  <!-- MY INFO TAB -->
+  <div id="tab-agheera" class="tab-content">
+    <div class="rb">
+      <div class="rb-title">📅 DAILY ROUTINE <span style="color:#336688;font-size:9px">(saved automatically)</span></div>
+      <div id="routine-list"></div>
+      <div class="add-row">
+        <input id="routine-time" placeholder="e.g. 8:00 AM"/>
+        <input id="routine-task" placeholder="Activity"/>
+        <button onclick="addRoutine()">+ ADD</button>
+      </div>
+    </div>
+    <div class="rb">
+      <div class="rb-title">🎯 LEARNING GOALS</div>
+      <div id="goals-list"></div>
+      <div class="add-row">
+        <input id="goal-name" placeholder="Goal name"/>
+        <input id="goal-duration" placeholder="Duration e.g. 30 days"/>
+        <button onclick="addGoal()">+ ADD</button>
+      </div>
+    </div>
+    <div class="rb">
+      <div class="rb-title">🏫 COLLEGE HOURS</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+        <label style="font-size:10px;color:#6aaccc">FROM:</label>
+        <input type="time" id="clg-from" value="08:00" style="background:#0a1f30;border:1px solid #0a2030;color:#00cfff;padding:3px 7px;font-size:11px;border-radius:2px"/>
+        <label style="font-size:10px;color:#6aaccc">TO:</label>
+        <input type="time" id="clg-to" value="17:00" style="background:#0a1f30;border:1px solid #0a2030;color:#00cfff;padding:3px 7px;font-size:11px;border-radius:2px"/>
+        <label style="font-size:10px;color:#6aaccc">DAYS:</label>
+        <input id="clg-days" placeholder="Mon-Fri" value="Mon-Fri" style="width:80px;background:#0a1f30;border:1px solid #0a2030;color:#00cfff;padding:3px 7px;font-size:11px;border-radius:2px"/>
+        <button onclick="saveCollegeHours()" style="padding:4px 10px">SAVE</button>
+      </div>
+      <div id="clg-saved" style="font-size:10px;color:#336688;margin-top:4px"></div>
+    </div>
   </div>
+
+  <!-- SCHEDULE TAB -->
   <div id="tab-schedule" class="tab-content hidden">
-    <div class="rb"><div class="rb-title">📆 SCHEDULE</div>
-      <div id="sched-ctrl"><select id="schedule-day"><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option></select>
-      <button onclick="generateSchedule()">⚡ GENERATE</button><button onclick="generateWeekly()">📅 FULL WEEK</button></div>
-      <div id="schedule-output"></div></div>
+    <div class="rb">
+      <div class="rb-title">📆 AI SMART SCHEDULE</div>
+      <div id="sched-ctrl" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        <select id="schedule-day" style="background:#0a1f30;border:1px solid #0a2030;color:#00cfff;padding:4px 8px;font-size:11px">
+          <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
+          <option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option>
+        </select>
+        <button onclick="generateSchedule()">⚡ GENERATE</button>
+        <button onclick="generateWeekly()">📅 FULL WEEK</button>
+        <button onclick="generateWithAI()">🤖 AI SMART</button>
+      </div>
+      <div id="schedule-output"></div>
+    </div>
   </div>
+
+  <!-- PROGRESS TAB -->
   <div id="tab-progress" class="tab-content hidden">
-    <div class="rb"><div class="rb-title">📊 PROGRESS</div><div id="progress-list"></div></div>
+    <div class="rb">
+      <div class="rb-title">📊 GOAL PROGRESS</div>
+      <div id="progress-list"></div>
+    </div>
+  </div>
+
+  <!-- BRAIN TAB -->
+  <div id="tab-brain" class="tab-content hidden">
+    <div class="rb">
+      <div class="rb-title">🧠 RUDRA LEARNING LOG</div>
+      <div id="brain-log-list" style="max-height:200px;overflow-y:auto"></div>
+    </div>
+    <div class="rb">
+      <div class="rb-title">📝 THINGS RUDRA KNOWS ABOUT YOU</div>
+      <div id="known-facts"></div>
+    </div>
+    <div class="rb" style="margin-top:8px">
+      <button onclick="clearBrain()" style="background:#200a0a;border:1px solid #660000;color:#ff4444;padding:6px 14px;cursor:pointer;font-size:10px">🗑 CLEAR BRAIN</button>
+    </div>
   </div>
 </div>
-<div id="overlay" class="hidden" onclick="closeRudra()"></div>
 
 <script src="app.js"></script>
 </body>
