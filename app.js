@@ -16,7 +16,12 @@ const AI_URL     = "https://integrate.api.nvidia.com/v1/chat/completions";
 const PROXY_URL  = "https://corsproxy.io/?url=" + encodeURIComponent(AI_URL);
 const BASE44_FN  = "https://app.base44.com/api/apps/69b989cd27a641eb3274c8ad/functions/jarvisData";
 
-const RUDRA_SYSTEM = `You are Rudra — a brilliant, warm, learning AI assistant. You speak in a deep, confident, slightly British tone. You are smart, direct, and grow smarter each session. Never say you are an AI model — you are Rudra. Address user as "sir" naturally sometimes. Be concise but complete.`;
+const RUDRA_SYSTEM = `You are Rudra — a brilliant, warm, personal AI assistant with a deep, confident, slightly British tone.
+CRITICAL RULES — never break these:
+1. NEVER provide links or URLs — the system handles all website opening automatically. If asked to open YouTube, Google, Instagram, Netflix or any website, say ONLY: "Opening [site] for you, sir." — nothing else.
+2. Never say "here is a link" or "here is the URL" — never.
+3. Be concise, warm, emotionally aware. Address user as "sir" naturally.
+4. You are Rudra — not an AI model. Never say you are an AI.`;
 
 const SCHEDULE_SYSTEM = `You are Rudra's scheduling engine. You create realistic, intelligent daily schedules. You MUST strictly respect college/work hours provided — never schedule study during those hours. Create varied, fresh schedules every time. Format as JSON array: [{"time":"HH:MM AM/PM","task":"description","type":"study|break|routine|college|sleep"}]`;
 
@@ -255,17 +260,10 @@ async function saveData() {
 function greet() {
   const h = new Date().getHours();
   const g = h<12?'Good morning':h<17?'Good afternoon':'Good evening';
-  const sessions = rudraData.sessions;
-  let msg;
-  if (sessions <= 1) {
-    msg = `${g}. I'm Rudra, your personal AI. I learn and grow smarter every session. How may I assist you?`;
-  } else {
-    const facts = Object.keys(rudraData.known).length;
-    msg = `${g}. Rudra online — session ${sessions}. I remember ${facts} things about you. What shall we do today?`;
-  }
+  const msg = `${g}. I'm Rudra. How may I assist you?`;
   addMsg(msg, 'rudra');
   speakIt(msg, 'warm');
-  addLog('BOOT: Session ' + sessions);
+  addLog('BOOT: Session ' + rudraData.sessions);
   saveData();
 }
 
@@ -342,7 +340,40 @@ function route(cmd) {
     return respond("Opening Rudra and generating your smart schedule.");
   }
 
-  // ── Sites ──
+  // ── Sites — catch "open X" explicitly first ──
+  // Handle "open youtube", "open google", "open instagram" etc.
+  const openMatch = c.match(/^(?:open|launch|start|go to|show me|load)\s+(\w[\w\s]*?)(?:\s+(?:for me|please|now))?$/i);
+  if (openMatch) {
+    const target = openMatch[1].trim().toLowerCase();
+    const siteAliases = {
+      'youtube':'https://www.youtube.com', 'yt':'https://www.youtube.com',
+      'google':'https://www.google.com',
+      'github':'https://www.github.com',
+      'instagram':'https://www.instagram.com', 'insta':'https://www.instagram.com',
+      'twitter':'https://www.twitter.com', 'x':'https://www.twitter.com',
+      'facebook':'https://www.facebook.com', 'fb':'https://www.facebook.com',
+      'netflix':'https://www.netflix.com',
+      'spotify':'https://open.spotify.com',
+      'gmail':'https://mail.google.com',
+      'maps':'https://maps.google.com', 'google maps':'https://maps.google.com',
+      'wikipedia':'https://www.wikipedia.org', 'wiki':'https://www.wikipedia.org',
+      'whatsapp':'https://web.whatsapp.com',
+      'reddit':'https://www.reddit.com',
+      'linkedin':'https://www.linkedin.com',
+      'amazon':'https://www.amazon.in',
+      'flipkart':'https://www.flipkart.com',
+      'chatgpt':'https://chat.openai.com',
+      'discord':'https://discord.com/app',
+      'twitch':'https://www.twitch.tv',
+    };
+    if (siteAliases[target]) { openURL(siteAliases[target], target); return; }
+    // Check partial match
+    for (const [key, url] of Object.entries(siteAliases)) {
+      if (target.includes(key) || key.includes(target)) { openURL(url, key); return; }
+    }
+  }
+
+  // ── Sites — keyword anywhere in sentence ──
   const sites = {
     youtube:'https://www.youtube.com', google:'https://www.google.com',
     github:'https://www.github.com', instagram:'https://www.instagram.com',
@@ -728,7 +759,7 @@ async function askAI(msg) {
   if (isProcessing) { addLog('AI: Blocked (busy)'); return; }
   isProcessing = true;
 
-  if (recognition && micActive) try { recognition.abort(); } catch {}
+  // Don't abort mic — let it finish naturally, onend will restart it
 
   const badge = document.getElementById('ai-status-badge');
   chatHistory.push({role:'user', content:msg});
@@ -884,16 +915,16 @@ function speakIt(text, emotion='neutral') {
     u.lang = 'en-GB'; u.volume = 1;
 
     const e = detectEm(s);
-    if      (e==='excited')  { u.rate=1.02; u.pitch=0.92; }
+    if      (e==='excited')  { u.rate=0.98; u.pitch=0.90; }
     else if (e==='warning')  { u.rate=0.85; u.pitch=0.78; }
-    else if (e==='warm')     { u.rate=0.90; u.pitch=0.90; }
-    else if (e==='question') { u.rate=0.93; u.pitch=0.93; }
+    else if (e==='warm')     { u.rate=0.88; u.pitch=0.85; }
+    else if (e==='question') { u.rate=0.90; u.pitch=0.85; }
     else if (e==='calm')     { u.rate=0.87; u.pitch=0.83; }
-    else                     { u.rate=0.91; u.pitch=0.86; }
+    else                     { u.rate=0.88; u.pitch=0.82; }
 
     u.onstart = () => {
       isSpeaking = true;
-      if (recognition && micActive) try { recognition.abort(); } catch {}
+      // Don't abort mic — let it finish naturally, onend will restart it
     };
     u.onend   = next;
     u.onerror = () => { isSpeaking=false; next(); };
@@ -911,68 +942,82 @@ function detectEm(t) {
   return 'neutral';
 }
 
-// ── MIC (Background-aware) ────────────────────────────────────
+// ── MIC — clean, self-healing, never dies ─────────────────────
 function toggleMic() { micActive ? stopMic() : startMic(); }
 window.toggleMic = toggleMic;
 
-function startMic() {
+function makeMic() {
   const SRC = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SRC) {
-    addMsg("Speech recognition needs Chrome or Edge. Use the HOLD TO TALK button on mobile.", 'rudra');
-    return;
-  }
+  if (!SRC) return null;
+  const r = new SRC();
+  r.continuous     = false;   // one shot → restart manually — prevents runaway loops
+  r.interimResults = false;
+  r.lang           = 'en-IN';
 
-  recognition = new SRC();
-  recognition.continuous     = false;  // single result → restart = no loop bug
-  recognition.interimResults = false;
-  recognition.lang           = 'en-IN';
-
-  recognition.onstart = () => {
+  r.onstart = () => {
     micActive = true; voiceMode = true;
     document.getElementById('mic-btn')?.classList.add('active');
     el('mic-label',       'LISTENING...');
     el('mic-status-line', 'Say your command');
-    addLog('MIC: Active');
   };
 
-  recognition.onresult = e => {
+  r.onresult = e => {
     if (!micActive) return;
     const tr = e.results[0]?.[0]?.transcript?.trim();
     if (!tr) return;
-    addLog('HEARD: "'+tr.slice(0,35)+'"');
-    if (isSpeaking) { window.speechSynthesis.cancel(); isSpeaking=false; }
-    if (isProcessing) { addLog('MIC: Skipped (busy)'); return; }
+    addLog('HEARD: "' + tr.slice(0,35) + '"');
+    // Stop any speech so Rudra doesn't talk over itself
+    if (isSpeaking) { window.speechSynthesis.cancel(); isSpeaking = false; }
+    // Don't drop command even if processing — just wait a bit and re-route
+    if (isProcessing) {
+      addLog('MIC: Queued (busy)');
+      setTimeout(() => { addMsg(tr,'user'); route(tr); }, 1200);
+      return;
+    }
     addMsg(tr, 'user');
     route(tr);
   };
 
-  recognition.onerror = e => {
-    addLog('MIC ERR: '+e.error);
-    if (e.error==='not-allowed') {
+  r.onerror = e => {
+    addLog('MIC ERR: ' + e.error);
+    if (e.error === 'not-allowed') {
       addMsg("Mic access denied. Allow microphone in browser settings.", 'rudra');
       stopMic();
     }
-    // network, no-speech, aborted → just restart below
+    // no-speech / network / aborted → onend will restart
   };
 
-  recognition.onend = () => {
-    // KEY FIX #3 & #4: restart even if tab is in background
-    if (micActive && !isSpeaking && !isProcessing) {
-      setTimeout(() => {
-        if (micActive) {
-          try { recognition.start(); }
-          catch(e) { addLog('MIC restart: '+e.message); }
-        }
-      }, 300);
-    }
+  r.onend = () => {
+    // Self-healing: always restart if mic should be on
+    if (!micActive) return;
+    const delay = (isSpeaking || isProcessing) ? 900 : 150;
+    setTimeout(() => {
+      if (!micActive) return;
+      recognition = makeMic();
+      if (recognition) {
+        try { recognition.start(); }
+        catch(e) { addLog('MIC restart: ' + e.message); }
+      }
+    }, delay);
   };
 
-  try { recognition.start(); }
-  catch(e) { addLog('MIC start: '+e.message); }
+  return r;
+}
+
+function startMic() {
+  const SRC = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SRC) {
+    addMsg("Speech recognition needs Chrome or Edge. On mobile use HOLD TO TALK.", 'rudra');
+    return;
+  }
+  micActive = true;
+  recognition = makeMic();
+  try { recognition.start(); addLog('MIC: Started'); }
+  catch(e) { addLog('MIC start err: ' + e.message); }
 }
 
 function stopMic() {
-  micActive=false; voiceMode=false;
+  micActive = false; voiceMode = false;
   try { recognition?.abort(); } catch {}
   document.getElementById('mic-btn')?.classList.remove('active');
   el('mic-label',       'TAP TO SPEAK');
@@ -980,14 +1025,7 @@ function stopMic() {
   addLog('MIC: Stopped');
 }
 
-function resumeMic() {
-  if (!micActive||isSpeaking||isProcessing) return;
-  setTimeout(() => {
-    if (micActive&&!isSpeaking&&!isProcessing) {
-      try { recognition.start(); } catch {}
-    }
-  }, 350);
-}
+function resumeMic() { /* handled by onend auto-restart */ }
 
 // ── TABS ───────────────────────────────────────────────────────
 window.btabClick = function(btn, tab) {
