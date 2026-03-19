@@ -188,11 +188,11 @@ body{
 .msg{padding:5px 10px;font-size:12px;line-height:1.6;animation:fadeUp .3s ease;border-radius:1px;}
 @keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
 
-.msg.jarvis{
+.msg.rudra{
   border-left:2px solid var(--c);
   background:#00cfff06;color:var(--bright);
 }
-.msg.jarvis::before{content:"JARVIS // ";color:var(--c);font-size:10px;display:block;margin-bottom:2px;letter-spacing:1px;font-family:'Orbitron',monospace;}
+.msg.rudra::before{content:"RUDRA // ";color:var(--c);font-size:10px;display:block;margin-bottom:2px;letter-spacing:1px;font-family:'Orbitron',monospace;}
 .msg.user{
   border-left:2px solid #336688;
   background:#00608810;color:#99ccee;
@@ -200,7 +200,7 @@ body{
 }
 .msg.user::before{content:"YOU // ";color:#5588aa;font-size:10px;display:block;margin-bottom:2px;font-family:'Orbitron',monospace;}
 .msg.thinking{border-left:2px solid #1a3a5a;background:transparent;}
-.msg.thinking::before{content:"JARVIS // ";color:var(--c);font-size:10px;display:block;margin-bottom:2px;font-family:'Orbitron',monospace;}
+.msg.thinking::before{content:"RUDRA // ";color:var(--c);font-size:10px;display:block;margin-bottom:2px;font-family:'Orbitron',monospace;}
 .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c);margin:0 2px;animation:dotB 1.2s infinite;}
 .dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
 @keyframes dotB{0%,80%,100%{transform:scale(.7);opacity:.4}40%{transform:scale(1.1);opacity:1}}
@@ -330,4 +330,37 @@ body{
 @media(max-width:800px){
   #layout{grid-template-columns:1fr;}
   #left-sidebar,#right-panel{display:none;}
+}
+
+/* ══ PUSH TO TALK (mobile) ══ */
+#ptt-btn{
+  display:none;
+  margin-top:8px;
+  background:radial-gradient(circle,#0a2030 50%,#05111e);
+  border:2px solid var(--ora);color:var(--ora);
+  padding:10px 22px;border-radius:25px;
+  font-family:'Orbitron',monospace;font-size:11px;letter-spacing:2px;
+  cursor:pointer;user-select:none;-webkit-user-select:none;
+  transition:all .15s;touch-action:none;
+}
+#ptt-btn:active{
+  background:radial-gradient(circle,#200800,#100400);
+  box-shadow:0 0 20px #ff6b0066;
+}
+
+/* ══ MOBILE ══ */
+@media(max-width:700px){
+  #left-sidebar,#right-panel{display:none!important;}
+  #layout{grid-template-columns:1fr!important;}
+  #ptt-btn{display:block!important;}
+  #mic-btn{width:54px;height:54px;}
+  #arc-outer{width:200px!important;height:200px!important;}
+  #arc-svg{width:200px!important;height:200px!important;}
+  #arc-time{font-size:26px!important;}
+  #rudra-panel{width:100vw!important;}
+  .tab-btn{font-size:9px!important;padding:7px 3px!important;}
+  .add-row{flex-direction:column;}
+  .add-row input{min-width:unset;}
+  #tb-time-big{font-size:18px!important;}
+  #chat-area{height:250px!important;}
 }
