@@ -1,76 +1,89 @@
 // ═══════════════════════════════════════════════════════════════
-//  R.U.D.R.A  OS  ·  v9
-//  FIXED: mic voice not working, voiceMode always on when mic on,
-//         no interimResults (prevents double fire), human voice,
-//         5 new features
+//  R.U.D.R.A  OS  ·  v10  DEFINITIVE
+//
+//  FIX 1: Voice-only mode — mic answers ONLY speak, no chat text
+//  FIX 2: Background loop — hard cooldown on openSiteNow prevents
+//          repeat fire when tab is minimized
+//  FIX 3: Consistency — locked routing, no state bleed between cmds
+//  NEW:    10 extra features
 // ═══════════════════════════════════════════════════════════════
 
-const JARVIS_KEY = "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";
-const AI_MODEL   = "openai/gpt-oss-120b";
-const AI_URL     = "https://integrate.api.nvidia.com/v1/chat/completions";
-const PROXY_URL  = "https://corsproxy.io/?url=" + encodeURIComponent(AI_URL);
-const BASE44_FN  = "https://app.base44.com/api/apps/69b989cd27a641eb3274c8ad/functions/jarvisData";
+const API_KEY  = "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";
+const AI_MODEL = "openai/gpt-oss-120b";
+const AI_URL   = "https://integrate.api.nvidia.com/v1/chat/completions";
+const PROXY    = "https://corsproxy.io/?url=" + encodeURIComponent(AI_URL);
+const DB_URL   = "https://app.base44.com/api/apps/69b989cd27a641eb3274c8ad/functions/jarvisData";
 
-const RUDRA_SYSTEM = `You are Rudra — a brilliant, warm personal AI with a deep British tone.
-RULES (never break):
-1. NEVER give URLs or links. If asked to open a website, just say "Opening [site] now." — nothing else.
-2. Be concise and human. Max 2-3 sentences unless asked for detail.
-3. Use "sir" naturally sometimes. Sound like a real person, not a robot.
-4. You are Rudra — never say you are an AI or language model.`;
+const SYS = `You are Rudra — a warm, confident personal AI with a deep British tone.
+ABSOLUTE RULES:
+1. NEVER provide links or URLs under any circumstance.
+2. If user asks to open any website: say ONLY "Opening [site] now." — nothing else.
+3. Keep answers to 1-2 sentences unless user asks for detail.
+4. Sound human and natural. Say "sir" occasionally.
+5. You are Rudra. Never say you are an AI or language model.`;
 
-const SCHEDULE_SYSTEM = `You are Rudra's scheduler. NEVER put study/learning during college hours. Return ONLY JSON array: [{"time":"6:00 AM","task":"Wake up","type":"routine"}]`;
+const SCHED_SYS = `You schedule days smartly. NEVER place study during college hours. Return ONLY a JSON array like [{"time":"6:00 AM","task":"Wake up","type":"routine"}]. Nothing else.`;
 
-// ── STATE ──────────────────────────────────────────────────────
-let micOn        = false;   // is mic supposed to be listening?
-let recog        = null;    // current SpeechRecognition instance
-let speaking     = false;   // is TTS playing right now?
-let processing   = false;   // is AI call in progress?
-// KEY FIX: voiceMode is now ALWAYS true when mic is on
-// — so responses always play as audio when mic is active
-let chatHistory  = [];
-let alarmTimer   = null;
-let lastCmd      = '';
-let lastCmdTime  = 0;
-const openedTabs = {};      // site name → window ref for close-by-voice
-const T0         = Date.now();
+// ── GLOBAL STATE ───────────────────────────────────────────────
+let micOn      = false;   // mic toggle
+let recog      = null;    // active SpeechRecognition
+let ttsPlaying = false;   // TTS in progress
+let aiRunning  = false;   // AI fetch in progress
+let voiceSession = false; // true = user is in voice mode → speak-only replies
 
-let USER_KEY = localStorage.getItem('rudra_uid') || (() => {
-  const k = 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
-  localStorage.setItem('rudra_uid', k); return k;
+// FIX 2: hard cooldown map — site → last open timestamp
+const openCooldown = {};  // key → ms timestamp
+const OPEN_CD_MS   = 4000; // 4 second cooldown per site
+
+// Dedupe for recognition
+let lastSpoken    = '';
+let lastSpokenAt  = 0;
+
+// Chat history for AI context
+let chatHistory = [];
+
+// Alarm
+let alarmInt = null;
+
+const START_TS = Date.now();
+
+// User persistence key
+const USER_KEY = localStorage.getItem('rudra_uid') || (() => {
+  const k = 'u_' + Date.now();
+  localStorage.setItem('rudra_uid', k);
+  return k;
 })();
 
-let rudraData = {
-  routine:[], goals:[],
-  college:{from:'08:00',to:'17:00',days:'Mon-Fri'},
-  sessions:0, brain:[], known:{}
-};
+let D = { routine:[], goals:[], college:{from:'08:00',to:'17:00',days:'Mon-Fri'}, sessions:0, brain:[], known:{} };
 
-// ── SINGLE SOURCE OF TRUTH: ALL SITES ─────────────────────────
+// ── SITES MAP ─────────────────────────────────────────────────
 const SITES = {
-  youtube:'https://www.youtube.com',     yt:'https://www.youtube.com',
-  google:'https://www.google.com',       gmail:'https://mail.google.com',
-  github:'https://www.github.com',       instagram:'https://www.instagram.com',
-  insta:'https://www.instagram.com',     twitter:'https://www.twitter.com',
-  x:'https://www.twitter.com',           facebook:'https://www.facebook.com',
-  fb:'https://www.facebook.com',         netflix:'https://www.netflix.com',
-  spotify:'https://open.spotify.com',    whatsapp:'https://web.whatsapp.com',
-  maps:'https://maps.google.com',        wikipedia:'https://www.wikipedia.org',
-  wiki:'https://www.wikipedia.org',      reddit:'https://www.reddit.com',
-  linkedin:'https://www.linkedin.com',   amazon:'https://www.amazon.in',
-  flipkart:'https://www.flipkart.com',   chatgpt:'https://chat.openai.com',
-  discord:'https://discord.com/app',     twitch:'https://www.twitch.tv',
-  notion:'https://www.notion.so',        drive:'https://drive.google.com',
-  stackoverflow:'https://stackoverflow.com'
+  youtube:'https://www.youtube.com', yt:'https://www.youtube.com',
+  google:'https://www.google.com',   gmail:'https://mail.google.com',
+  github:'https://www.github.com',   instagram:'https://www.instagram.com',
+  insta:'https://www.instagram.com', twitter:'https://www.twitter.com',
+  x:'https://www.twitter.com',       facebook:'https://www.facebook.com',
+  fb:'https://www.facebook.com',     netflix:'https://www.netflix.com',
+  spotify:'https://open.spotify.com',whatsapp:'https://web.whatsapp.com',
+  maps:'https://maps.google.com',    wikipedia:'https://www.wikipedia.org',
+  wiki:'https://www.wikipedia.org',  reddit:'https://www.reddit.com',
+  linkedin:'https://www.linkedin.com',amazon:'https://www.amazon.in',
+  flipkart:'https://www.flipkart.com',chatgpt:'https://chat.openai.com',
+  discord:'https://discord.com/app', twitch:'https://www.twitch.tv',
+  notion:'https://www.notion.so',    drive:'https://drive.google.com',
+  stackoverflow:'https://stackoverflow.com', hotstar:'https://www.hotstar.com',
+  prime:'https://www.primevideo.com', maps2:'https://maps.google.com',
 };
 
-// ── VOICE ENGINE — human, warm, deep ──────────────────────────
-let selVoice = null;
+// ─────────────────────────────────────────────────────────────
+// VOICE ENGINE
+// ─────────────────────────────────────────────────────────────
+let voice = null;
 
-function pickVoice() {
-  const vs = window.speechSynthesis?.getVoices() || [];
-  if (!vs.length) return;
-  // Priority order — best deep male voice
-  const prefs = [
+function loadVoice() {
+  const all = window.speechSynthesis?.getVoices() || [];
+  if (!all.length) return;
+  const pick = [
     v => v.name === 'Google UK English Male',
     v => v.name === 'Microsoft George - English (United Kingdom)',
     v => v.name.includes('Daniel') && v.lang === 'en-GB',
@@ -78,117 +91,110 @@ function pickVoice() {
     v => v.name.includes('James'),
     v => v.lang === 'en-GB',
     v => /david|mark|paul/i.test(v.name) && v.lang.startsWith('en'),
-    v => v.name.toLowerCase().includes('male') && v.lang.startsWith('en'),
     v => v.lang === 'en-US',
     v => v.lang.startsWith('en'),
   ];
-  for (const fn of prefs) {
-    const v = vs.find(fn);
-    if (v) { selVoice = v; addLog('VOICE: ' + v.name); return; }
-  }
+  for (const fn of pick) { const v = all.find(fn); if (v) { voice = v; addLog('🎙 '+v.name); return; } }
 }
 
 if (window.speechSynthesis) {
-  pickVoice();
-  window.speechSynthesis.onvoiceschanged = pickVoice;
-  [300, 800, 1500, 3000].forEach(d => setTimeout(pickVoice, d));
+  loadVoice();
+  window.speechSynthesis.onvoiceschanged = loadVoice;
+  [200,600,1200,2500].forEach(t => setTimeout(loadVoice, t));
 }
 
-// KEY FUNCTION — speak out loud, human emotional tone
-function speak(text, emotion) {
+// SAY: core speak function — always humanized
+function say(text, emotion) {
   if (!window.speechSynthesis || !text) return;
   window.speechSynthesis.cancel();
-  speaking = false;
+  ttsPlaying = false;
 
   const clean = text
-    .replace(/<[^>]*>/g, '')
-    .replace(/[#*`_\[\]]/g, '')
-    .replace(/https?:\/\/\S+/g, '')   // strip any URLs from speech
-    .trim()
-    .slice(0, 480);
+    .replace(/<[^>]*>/g,'').replace(/[#*`_\[\]]/g,'')
+    .replace(/https?:\/\/\S+/g,'').trim().slice(0,500);
   if (!clean) return;
 
-  if (!selVoice) pickVoice();
+  if (!voice) loadVoice();
 
-  // Split into natural sentences
-  const parts = clean.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || [clean];
-  let idx = 0;
+  // Break into sentences for natural pacing
+  const sentences = clean.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || [clean];
+  let i = 0;
 
   function next() {
-    if (idx >= parts.length) { speaking = false; return; }
-    const sentence = parts[idx++].trim();
-    if (!sentence) { next(); return; }
+    if (i >= sentences.length) { ttsPlaying = false; return; }
+    const s = sentences[i++].trim();
+    if (!s) { next(); return; }
 
-    const u = new SpeechSynthesisUtterance(sentence);
-    if (selVoice) u.voice = selVoice;
-    u.lang   = 'en-GB';
+    const u = new SpeechSynthesisUtterance(s);
+    if (voice) u.voice = voice;
+    u.lang = 'en-GB';
     u.volume = 1.0;
 
-    // HUMAN emotional voice — not robotic
-    const em = emotion || detectEmotion(sentence);
-    switch(em) {
-      case 'excited':  u.rate = 1.05; u.pitch = 1.10; break;
-      case 'happy':    u.rate = 1.00; u.pitch = 1.08; break;
-      case 'warm':     u.rate = 0.92; u.pitch = 1.05; break;
-      case 'question': u.rate = 0.95; u.pitch = 1.08; break;
-      case 'warning':  u.rate = 0.88; u.pitch = 0.90; break;
-      case 'calm':     u.rate = 0.90; u.pitch = 0.95; break;
-      case 'sad':      u.rate = 0.85; u.pitch = 0.88; break;
-      default:         u.rate = 0.95; u.pitch = 1.00; // natural neutral
+    // Human emotional tone — NOT robotic
+    const em = emotion || guessEmotion(s);
+    switch (em) {
+      case 'excited':  u.rate = 1.08; u.pitch = 1.12; break;
+      case 'happy':    u.rate = 1.02; u.pitch = 1.10; break;
+      case 'warm':     u.rate = 0.94; u.pitch = 1.06; break;
+      case 'question': u.rate = 0.97; u.pitch = 1.10; break;
+      case 'warning':  u.rate = 0.88; u.pitch = 0.92; break;
+      case 'calm':     u.rate = 0.91; u.pitch = 0.97; break;
+      default:         u.rate = 0.96; u.pitch = 1.02;   // natural, slightly warm
     }
 
-    u.onstart = () => { speaking = true; };
-    u.onend   = () => { speaking = false; next(); };
-    u.onerror = () => { speaking = false; next(); };
-
+    u.onstart = () => { ttsPlaying = true; };
+    u.onend   = () => { ttsPlaying = false; next(); };
+    u.onerror = () => { ttsPlaying = false; next(); };
     window.speechSynthesis.speak(u);
   }
   next();
 }
 
-function detectEmotion(t) {
-  if (/\?/.test(t))                                                             return 'question';
-  if (/great|excellent|perfect|awesome|done|ready|online|yes|sure/i.test(t))  return 'happy';
-  if (/morning|evening|afternoon|hello|hi\b|welcome|good\s/i.test(t))         return 'warm';
-  if (/exciting|amazing|incredible|wow|fantastic/i.test(t))                   return 'excited';
-  if (/error|fail|cannot|denied|blocked|warning|alert|can't/i.test(t))        return 'warning';
-  if (/sorry|unfortunately|problem|issue|trouble/i.test(t))                   return 'calm';
+function guessEmotion(t) {
+  if (/\?/.test(t))                                                       return 'question';
+  if (/great|perfect|awesome|done|ready|sure|absolutely|of course/i.test(t)) return 'happy';
+  if (/morning|evening|afternoon|hello|hi\b|welcome/i.test(t))           return 'warm';
+  if (/amazing|incredible|fantastic|exciting/i.test(t))                  return 'excited';
+  if (/error|fail|cannot|denied|blocked|warning|can't/i.test(t))         return 'warning';
+  if (/sorry|unfortunately|problem|issue|trouble/i.test(t))              return 'calm';
   return 'neutral';
 }
 
-// ── BOOT ───────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────────────────────────────
 window.addEventListener('load', async () => {
   tickClock();  setInterval(tickClock, 1000);
   tickBars();   setInterval(tickBars, 3500);
-  tickBattery();setInterval(tickBattery, 30000);
+  tickBattery();setInterval(tickBattery, 60000);
   getWeather();
-  tickGauges(); setInterval(tickGauges, 3500);
+  drawGauges(); setInterval(drawGauges, 3500);
 
   document.getElementById('text-input')
     ?.addEventListener('keydown', e => { if (e.key === 'Enter') sendText(); });
 
-  // Space bar = quick mic toggle (not when typing)
+  // Space = toggle mic (not in text field)
   document.addEventListener('keydown', e => {
     if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
-      e.preventDefault();
-      if (!micOn) startMic();
+      e.preventDefault(); toggleMic();
     }
   });
 
-  // Visibility — respawn mic when tab returns to foreground
+  // Visibility: when tab comes back, ensure mic is alive
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && micOn) {
-      addLog('TAB: back — respawn mic');
-      setTimeout(() => { if (micOn && !recog) spawnMic(); }, 400);
+    if (!document.hidden && micOn && !recog) {
+      setTimeout(spawnMic, 300);
     }
   });
 
   await loadData();
   renderAll(); updateBrainUI();
-  setTimeout(greet, 700);
+  setTimeout(greet, 600);
 });
 
-// ── CLOCK ──────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// CLOCK / BARS / GAUGES / WEATHER / BATTERY
+// ─────────────────────────────────────────────────────────────
 function tickClock() {
   const n = new Date();
   const hm = p2(n.getHours())+':'+p2(n.getMinutes());
@@ -199,12 +205,24 @@ function tickClock() {
   el('tb-cal-month',n.toLocaleDateString('en-IN',{month:'long'}).toUpperCase());
   el('tb-cal-day',n.toLocaleDateString('en-IN',{weekday:'long'}).toUpperCase());
   el('btab-clock',hm+':'+p2(n.getSeconds())); el('btab-datestr',dt);
-  const up=Math.floor((Date.now()-T0)/1000);
+  const up=Math.floor((Date.now()-START_TS)/1000);
   el('uptime-val',p2(Math.floor(up/3600))+':'+p2(Math.floor(up%3600/60))+':'+p2(up%60));
 }
-function tickBars(){setBar('cpu',rnd(20,75));setBar('ram',rnd(40,78));setBar('net',rnd(15,85));}
-function setBar(id,v){const b=document.getElementById('bar-'+id),s=document.getElementById('val-'+id);if(b)b.style.width=v+'%';if(s)s.textContent=v+'%';}
-function tickBattery(){navigator.getBattery?.().then(b=>{const p=Math.round(b.level*100)+'%';el('batt-pct',p);el('pwr-status',b.charging?'CHARGING ⚡':'BATTERY');el('btab-batt-val',p);el('btab-batt-st',b.charging?'CHARGING':'DISCHARGING');});}
+
+function tickBars() {
+  sbar('cpu',rnd(20,75)); sbar('ram',rnd(40,78)); sbar('net',rnd(15,85));
+}
+function sbar(id,v) {
+  const b=document.getElementById('bar-'+id),s=document.getElementById('val-'+id);
+  if(b)b.style.width=v+'%'; if(s)s.textContent=v+'%';
+}
+function tickBattery() {
+  navigator.getBattery?.().then(b=>{
+    const p=Math.round(b.level*100)+'%';
+    el('batt-pct',p); el('pwr-status',b.charging?'CHARGING ⚡':'BATTERY');
+    el('btab-batt-val',p); el('btab-batt-st',b.charging?'CHARGING':'DISCHARGING');
+  });
+}
 
 async function getWeather() {
   try {
@@ -223,8 +241,12 @@ async function getWeather() {
     el('w-loc',(gd.address?.city||gd.address?.town||gd.address?.village||'UNKNOWN').toUpperCase());
   } catch { el('w-cond','UNAVAILABLE'); el('w-loc','UNKNOWN'); }
 }
-function tickGauges(){drawGauge('gauge-cpu',rnd(20,75),'#00cfff');drawGauge('gauge-ram',rnd(40,78),'#0080ff');}
-function drawGauge(id,val,color){
+
+function drawGauges() {
+  drawG('gauge-cpu',rnd(20,75),'#00cfff');
+  drawG('gauge-ram',rnd(40,78),'#0080ff');
+}
+function drawG(id,val,color) {
   const c=document.getElementById(id);if(!c)return;
   const ctx=c.getContext('2d'),cx=c.width/2,cy=c.height/2,r=cx-7;
   ctx.clearRect(0,0,c.width,c.height);
@@ -233,319 +255,386 @@ function drawGauge(id,val,color){
   ctx.fillStyle=color;ctx.font='bold 13px Orbitron,monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(val+'%',cx,cy);
 }
 
-function addLog(msg){
+function addLog(msg) {
   const le=document.getElementById('activity-log');if(!le)return;
-  const t=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  const t=new Date().toLocaleTimeString('en-IN',{hour12:false});
   const d=document.createElement('div');d.className='log-entry';
   d.innerHTML=`<span>${t}</span> ${msg}`;
   le.insertBefore(d,le.firstChild);
   while(le.children.length>30)le.lastChild.remove();
 }
 
-// ── DATA ───────────────────────────────────────────────────────
-async function loadData(){
-  try{const loc=localStorage.getItem('rudra_data');if(loc)rudraData={...rudraData,...JSON.parse(loc)};}catch{}
-  try{
-    const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),7000);
-    const r=await fetch(BASE44_FN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'load',user_key:USER_KEY}),signal:ctrl.signal});
-    clearTimeout(t);const j=await r.json();
-    if(j.ok&&j.record){['routine','goals','college','brain','known','sessions'].forEach(k=>{if(j.record[k])rudraData[k]=j.record[k];});localStorage.setItem('rudra_data',JSON.stringify(rudraData));addLog('DATA ✓');}
-  }catch{addLog('LOCAL DATA');}
-  rudraData.sessions=(rudraData.sessions||0)+1;
-  if(rudraData.college){
-    const cf=document.getElementById('clg-from'),ct=document.getElementById('clg-to'),cd=document.getElementById('clg-days');
-    if(cf)cf.value=rudraData.college.from||'08:00';if(ct)ct.value=rudraData.college.to||'17:00';if(cd)cd.value=rudraData.college.days||'Mon-Fri';
-    el('clg-saved',`Saved: ${rudraData.college.from}–${rudraData.college.to} (${rudraData.college.days})`);
-  }
-}
-async function saveData(){
-  localStorage.setItem('rudra_data',JSON.stringify(rudraData));
-  try{
-    const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),8000);
-    await fetch(BASE44_FN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',user_key:USER_KEY,data:{routine:rudraData.routine,goals:rudraData.goals,college:rudraData.college,brain:rudraData.brain.slice(-100),known:rudraData.known,sessions:rudraData.sessions}}),signal:ctrl.signal});
-    clearTimeout(t);
-  }catch{}
+// ─────────────────────────────────────────────────────────────
+// DATA PERSISTENCE
+// ─────────────────────────────────────────────────────────────
+async function loadData() {
+  try { const loc=localStorage.getItem('rudra_d'); if(loc) D={...D,...JSON.parse(loc)}; } catch{}
+  try {
+    const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),7000);
+    const r=await fetch(DB_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'load',user_key:USER_KEY}),signal:ctrl.signal});
+    clearTimeout(t); const j=await r.json();
+    if(j.ok&&j.record){['routine','goals','college','brain','known','sessions'].forEach(k=>{if(j.record[k])D[k]=j.record[k];});localStorage.setItem('rudra_d',JSON.stringify(D));addLog('DATA ✓');}
+  } catch { addLog('LOCAL DATA'); }
+  D.sessions=(D.sessions||0)+1;
+  const cf=document.getElementById('clg-from'),ct=document.getElementById('clg-to'),cd=document.getElementById('clg-days');
+  if(cf)cf.value=D.college.from||'08:00'; if(ct)ct.value=D.college.to||'17:00'; if(cd)cd.value=D.college.days||'Mon-Fri';
+  el('clg-saved',`Saved: ${D.college.from}–${D.college.to} (${D.college.days})`);
 }
 
-// ── GREET ──────────────────────────────────────────────────────
-function greet(){
+async function saveData() {
+  localStorage.setItem('rudra_d',JSON.stringify(D));
+  try {
+    const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),8000);
+    await fetch(DB_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',user_key:USER_KEY,data:{routine:D.routine,goals:D.goals,college:D.college,brain:D.brain.slice(-100),known:D.known,sessions:D.sessions}}),signal:ctrl.signal});
+    clearTimeout(t);
+  } catch {}
+}
+
+// ─────────────────────────────────────────────────────────────
+// GREET
+// ─────────────────────────────────────────────────────────────
+function greet() {
   const h=new Date().getHours();
   const g=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
   const msg=`${g}. I'm Rudra. How may I assist you?`;
-  addMsg(msg,'rudra');
-  speak(msg,'warm');
-  addLog('BOOT · Session '+rudraData.sessions);
+  // Greet is always shown as text + spoken
+  showMsg(msg,'rudra');
+  say(msg,'warm');
+  addLog('BOOT · Session '+D.sessions);
   saveData();
 }
 
-// ── TEXT SEND ──────────────────────────────────────────────────
-function sendText(){
+// ─────────────────────────────────────────────────────────────
+// TEXT INPUT (always shows text)
+// ─────────────────────────────────────────────────────────────
+function sendText() {
   const inp=document.getElementById('text-input');
   const v=inp?.value.trim(); if(!v)return;
   inp.value='';
-  addMsg(v,'user');
-  handleCmd(v, false); // text mode — no voice reply unless mic is on
+  showMsg(v,'user');     // show what user typed
+  exec(v, false);        // false = text mode
 }
 window.sendText=sendText; window.handleTextInput=sendText;
 
-// ── OPEN A WEBSITE ─────────────────────────────────────────────
-function openSiteNow(url, name) {
-  // window.open works from background tabs — no isProcessing dependency
-  try {
-    const tab = window.open(url, '_blank');
-    if (tab) openedTabs[name.toLowerCase()] = tab;
-  } catch(e) { addLog('OPEN ERR: '+e.message); }
-  const msg = 'Opening '+name+' for you.';
-  addMsg(msg,'rudra');
-  speak(msg, 'neutral'); // ALWAYS speak — doesn't depend on voiceMode
-  addLog('OPEN: '+name);
-}
-window.openURL  = openSiteNow;
-window.openSite = openSiteNow;
-
-function closeTab(name){
-  const key=name.toLowerCase().replace('close','').trim();
-  if(openedTabs[key]){try{openedTabs[key].close();delete openedTabs[key];}catch{}}
-  for(const[k,tab]of Object.entries(openedTabs)){
-    if(k.includes(key)||key.includes(k)){try{tab.close();delete openedTabs[k];say('Closed '+k+'.');return;}catch{}}
-  }
-  say('Please close '+name+' manually — browser limits remote closing.');
-}
-
-// ── MAIN COMMAND HANDLER ───────────────────────────────────────
-// voiceCmd = true when coming from mic (so we always speak back)
-function handleCmd(cmd, voiceCmd) {
-  const c = cmd.toLowerCase().trim();
-
-  // Dedupe: same phrase within 1.2 seconds = ignore
+// ─────────────────────────────────────────────────────────────
+// OPEN SITE  — with hard cooldown to prevent loops
+// ─────────────────────────────────────────────────────────────
+function openSite(url, name) {
+  const key = name.toLowerCase();
   const now = Date.now();
-  if (cmd === lastCmd && (now - lastCmdTime) < 1200) { addLog('DEDUPE: '+cmd.slice(0,20)); return; }
-  lastCmd = cmd; lastCmdTime = now;
 
-  addLog('CMD: "'+cmd.slice(0,35)+'"');
+  // FIX 2: hard cooldown — if same site opened within 4s, SKIP
+  if (openCooldown[key] && (now - openCooldown[key]) < OPEN_CD_MS) {
+    addLog('COOLDOWN: skipped '+name);
+    return;
+  }
+  openCooldown[key] = now;
 
-  // ─── CLOSE ───
-  if (/^(close|shut|exit|kill)\b/i.test(c)) {
-    const what = c.replace(/^(close|shut|exit|kill)\s*/i,'').trim();
-    if (/rudra|panel/i.test(what)) { closeRudraPanel(); say('Panel closed.'); return; }
-    closeTab(what); return;
+  try { window.open(url, '_blank'); } catch(e) { addLog('OPEN ERR:'+e.message); }
+
+  const msg = 'Opening '+name+'.';
+  addLog('OPEN: '+name);
+
+  // FIX 1: voice session → speak only, no chat message
+  if (voiceSession) {
+    say(msg, 'neutral');
+  } else {
+    showMsg(msg,'rudra');
+    say(msg,'neutral');
+  }
+}
+window.openURL  = openSite;
+window.openSite = openSite;
+
+// ─────────────────────────────────────────────────────────────
+// RESPOND — FIX 1: voice session = speak only (no chat bubble)
+// ─────────────────────────────────────────────────────────────
+function respond(text, emotion) {
+  const em = emotion || guessEmotion(text);
+  if (voiceSession) {
+    // VOICE MODE: speak only — NO text bubble shown
+    say(text, em);
+  } else {
+    // TEXT MODE: show bubble + speak
+    showMsg(text,'rudra');
+    say(text, em);
+  }
+  addLog('RESP: '+text.slice(0,40));
+}
+
+// ─────────────────────────────────────────────────────────────
+// MAIN COMMAND EXECUTOR  — locked, consistent, never bleed
+// ─────────────────────────────────────────────────────────────
+function exec(raw, isVoice) {
+  const cmd = raw.trim();
+  const c   = cmd.toLowerCase();
+
+  // ── Dedupe: same command within 1.5s → skip ──
+  const now = Date.now();
+  if (cmd === lastSpoken && (now - lastSpokenAt) < 1500) {
+    addLog('DEDUPE skip: '+cmd.slice(0,20));
+    return;
+  }
+  lastSpoken   = cmd;
+  lastSpokenAt = now;
+
+  addLog('EXEC: "'+cmd.slice(0,35)+'"');
+
+  // Show user bubble only in text mode (voice shows nothing)
+  // Already handled by caller (sendText shows it, mic handler shows it)
+
+  // ════════════════════════════════════════════
+  // BLOCK 1: CLOSE
+  // ════════════════════════════════════════════
+  if (/^(close|shut|exit|kill)\s+/i.test(c)) {
+    const what = c.replace(/^(close|shut|exit|kill)\s+/i,'').trim();
+    if (/rudra|panel/i.test(what)) { closeRudraPanel(); respond('Panel closed.'); return; }
+    respond('Please close '+what+' manually, sir. Browsers restrict that.'); return;
   }
 
-  // ─── OPEN / NAVIGATE ───  (highest priority — NEVER goes to AI)
-  const openPrefixes = /^(open|launch|go\s+to|show\s+me|load|take\s+me\s+to|navigate\s+to|visit)\s+/i;
-  if (openPrefixes.test(c)) {
-    const target = c.replace(openPrefixes,'').trim().replace(/\s+/g,'');
-    if (SITES[target]) { openSiteNow(SITES[target], target); return; }
-    // partial match
+  // ════════════════════════════════════════════
+  // BLOCK 2: OPEN — HIGHEST PRIORITY, never goes to AI
+  // ════════════════════════════════════════════
+  const OPEN_RE = /^(open|launch|go\s+to|show\s+me|load|take\s+me\s+to|navigate\s+to|visit|start)\s+(.+)/i;
+  const om = c.match(OPEN_RE);
+  if (om) {
+    const target = om[2].trim().replace(/\s*(please|now|for\s+me)\s*$/i,'').toLowerCase().replace(/\s+/g,'');
+    if (SITES[target]) { openSite(SITES[target], target); return; }
     for (const [k,u] of Object.entries(SITES)) {
-      if (target.includes(k) || k.startsWith(target) || target.startsWith(k)) { openSiteNow(u,k); return; }
+      if (target === k || target.includes(k) || k.startsWith(target)) { openSite(u,k); return; }
     }
-    // URL
-    if (/^(https?|www\.)/i.test(target)) { openSiteNow(target.startsWith('http')?target:'https://'+target, target); return; }
-    // Google search fallback
-    openSiteNow('https://www.google.com/search?q='+encodeURIComponent(cmd.replace(openPrefixes,'')),'Google: '+cmd.replace(openPrefixes,'').trim());
+    if (/^https?:\/\//.test(target) || /^www\./.test(target)) {
+      openSite(target.startsWith('http')?target:'https://'+target, target); return;
+    }
+    openSite('https://www.google.com/search?q='+encodeURIComponent(om[2].trim()), 'Google: '+om[2].trim());
     return;
   }
 
-  // Site name alone
-  const alone = c.replace(/\bplease\b|\bnow\b|\bfor me\b/g,'').trim();
-  if (SITES[alone]) { openSiteNow(SITES[alone], alone); return; }
+  // Site name said alone (e.g. just "youtube")
+  const bare = c.replace(/\s*(please|now|for\s+me)\s*/g,'').trim();
+  if (SITES[bare]) { openSite(SITES[bare], bare); return; }
 
-  // ─── PLAY ───
+  // ════════════════════════════════════════════
+  // BLOCK 3: PLAY
+  // ════════════════════════════════════════════
   const pm = c.match(/^play\s+(.+)/i);
-  if (pm) { openSiteNow('https://www.youtube.com/results?search_query='+encodeURIComponent(pm[1]),'YouTube'); say('Playing "'+pm[1]+'" on YouTube.'); return; }
+  if (pm) { openSite('https://www.youtube.com/results?search_query='+encodeURIComponent(pm[1]),'YouTube'); return; }
 
-  // ─── SEARCH ───
+  // ════════════════════════════════════════════
+  // BLOCK 4: SEARCH
+  // ════════════════════════════════════════════
   const sm = c.match(/^search\s+(.+?)\s+on\s+(\w+)/i);
   if (sm) {
-    const urls={youtube:'https://www.youtube.com/results?search_query=',google:'https://www.google.com/search?q=',amazon:'https://www.amazon.in/s?k='};
-    openSiteNow((urls[sm[2].toLowerCase()]||urls.google)+encodeURIComponent(sm[1]), sm[2]+': '+sm[1]); return;
+    const qs={youtube:'https://www.youtube.com/results?search_query=',google:'https://www.google.com/search?q=',amazon:'https://www.amazon.in/s?k='};
+    openSite((qs[sm[2].toLowerCase()]||qs.google)+encodeURIComponent(sm[1]), sm[2]); return;
   }
 
-  // ─── RUDRA PANEL ───
-  if (/open\s*(rudra|panel)|rudra\s*panel/i.test(c)) { openRudraPanel(); say('Rudra panel open.'); return; }
-  if (/schedule|timetable|plan\s+my\s+day/i.test(c)) { openRudraPanel(); setTimeout(()=>{switchTab('schedule');generateWithAI();},300); say('Generating your smart schedule.'); return; }
+  // ════════════════════════════════════════════
+  // BLOCK 5: MIC CONTROLS
+  // ════════════════════════════════════════════
+  if (/^(stop|turn\s+off|disable)\s+(mic|microphone|listen)/i.test(c)) { stopMic(); respond('Microphone off.'); return; }
+  if (/^(start|turn\s+on|enable)\s+(mic|microphone|listen)/i.test(c)) { startMic(); respond('Listening.'); return; }
 
-  // ─── STOP SPEAKING ───
-  if (/stop.*talk|be quiet|shut up|stop.*speak|silence/i.test(c)) {
-    window.speechSynthesis.cancel(); speaking=false;
-    addMsg('Understood.','rudra'); return;
+  // ════════════════════════════════════════════
+  // BLOCK 6: STOP SPEAKING
+  // ════════════════════════════════════════════
+  if (/^(stop|be quiet|silence|shut up|stop (talking|speaking))/i.test(c)) {
+    window.speechSynthesis.cancel(); ttsPlaying=false;
+    if (!voiceSession) showMsg('Understood.','rudra');
+    return;
   }
 
-  // ─── QUICK ANSWERS (no AI) ───
-  if (/what.*time|time now|current time/i.test(c))
-    return say('It\'s '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+', sir.');
-  if (/what.*date|today.*date|what day/i.test(c))
-    return say('Today is '+new Date().toLocaleDateString('en-IN',{weekday:'long',year:'numeric',month:'long',day:'numeric'})+'.') ;
-  if (/weather/i.test(c)){
+  // ════════════════════════════════════════════
+  // BLOCK 7: RUDRA PANEL
+  // ════════════════════════════════════════════
+  if (/open\s*(rudra|panel)|rudra\s*panel/i.test(c)) { openRudraPanel(); respond('Rudra panel open.'); return; }
+  if (/schedule|plan\s+my\s+day|timetable/i.test(c)) {
+    openRudraPanel(); setTimeout(()=>{switchTab('schedule');generateWithAI();},300);
+    respond('Generating your smart schedule now.'); return;
+  }
+
+  // ════════════════════════════════════════════
+  // BLOCK 8: INSTANT ANSWERS (no AI needed)
+  // ════════════════════════════════════════════
+  if (/^(what.*time|time now|current time)/i.test(c))
+    return respond('It\'s '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+', sir.');
+  if (/^(what.*date|today.*date|what day)/i.test(c))
+    return respond('Today is '+new Date().toLocaleDateString('en-IN',{weekday:'long',year:'numeric',month:'long',day:'numeric'})+'.') ;
+  if (/weather/i.test(c)) {
     const tmp=document.getElementById('w-temp')?.textContent||'--',cnd=document.getElementById('w-cond')?.textContent||'--',loc=document.getElementById('w-loc')?.textContent||'--';
-    return say('It\'s '+tmp+' and '+cnd.toLowerCase()+' in '+loc+'.');
+    return respond('It\'s '+tmp+', '+cnd.toLowerCase()+' in '+loc+'.');
   }
-  if (/battery|charge level/i.test(c)){navigator.getBattery?.().then(b=>say('Battery at '+Math.round(b.level*100)+'%, '+(b.charging?'charging.':'not charging.')));return;}
-  if (/^(hello|hi|hey|yo)\b/i.test(c)) return say('Hey! Rudra online. What do you need?');
-  if (/who are you|your name|what are you/i.test(c)) return say("I'm Rudra, your personal AI assistant.");
+  if (/battery|charge.*(level|status)/i.test(c)) {
+    navigator.getBattery?.().then(b=>respond('Battery is at '+Math.round(b.level*100)+'%, '+(b.charging?'currently charging.':'not charging.')));
+    return;
+  }
+  if (/^(hello|hi|hey|yo|what'?s\s+up)\b/i.test(c)) return respond('Hey! All systems online. What do you need?','happy');
+  if (/who are you|your name|what are you/i.test(c)) return respond("I'm Rudra, your personal AI assistant.",'warm');
+  if (/clear\s*(chat|screen)/i.test(c)) { document.getElementById('messages').innerHTML=''; chatHistory=[]; respond('Chat cleared.'); return; }
 
-  // ─── STOP / START MIC ───
-  if (/stop.*mic|mic.*off|stop.*listen/i.test(c)){stopMic();return;}
-  if (/start.*mic|mic.*on|start.*listen/i.test(c)){startMic();return;}
+  // ════════════════════════════════════════════
+  // BLOCK 9: BUILT-IN FEATURES
+  // ════════════════════════════════════════════
 
-  // ─── CLEAR CHAT ───
-  if (/clear.*chat|reset.*chat|clear.*screen/i.test(c)){document.getElementById('messages').innerHTML='';chatHistory=[];say('Chat cleared.');return;}
-
-  // ─── FEATURE: Calculator ───
-  const calcM = c.match(/(?:calculate|what\s+is|solve|compute)\s+([\d\s+\-*\/().^%]+)/i);
+  // 1. CALCULATOR
+  const calcM = c.match(/^(calculate|compute|what\s+is|solve)\s+([\d\s\+\-\*\/\(\)\.\^%x]+)$/i);
   if (calcM) {
     try {
-      const expr = calcM[1].trim().replace(/\^/g,'**').replace(/x/gi,'*');
-      const res = Function('"use strict";return('+expr+')')();
-      return say(calcM[1].trim()+' equals '+res);
-    } catch {}
-  }
-  // Word math
-  const wordM = c.match(/what\s+is\s+(\d+)\s+(plus|minus|times|divided\s+by|multiplied\s+by)\s+(\d+)/i);
-  if (wordM) {
-    const a=+wordM[1],op=wordM[2].toLowerCase().replace(/\s+/g,' '),b=+wordM[3];
-    const r=op==='plus'?a+b:op==='minus'?a-b:(op==='times'||op.includes('multiplied'))?a*b:a/b;
-    return say(wordM[1]+' '+wordM[2]+' '+wordM[3]+' is '+r+'.');
+      const expr = calcM[2].replace(/\^/g,'**').replace(/x/gi,'*');
+      const res  = Function('"use strict";return('+expr+')')();
+      return respond(calcM[2].trim()+' = '+res);
+    } catch { /* fall through */ }
   }
 
-  // ─── FEATURE: Reminder ───
-  const remM = c.match(/remind\s+me\s+(?:in|after)\s+(\d+)\s+(minute|min|second|sec|hour|hr)/i);
-  if (remM) {
-    const num=parseInt(remM[1]),unit=remM[2].toLowerCase();
-    const ms=unit.startsWith('s')?num*1000:unit.startsWith('h')?num*3600000:num*60000;
-    setTimeout(()=>{ const m='Reminder: '+num+' '+unit+(num>1?'s':'')+' up!'; addMsg(m,'rudra'); speak(m,'excited'); },ms);
-    return say('Reminder set for '+num+' '+unit+(num>1?'s':'')+' from now, sir.');
+  // 2. WORD MATH
+  const wm = c.match(/what\s+is\s+(\d+)\s+(plus|minus|times|divided\s+by|multiplied\s+by)\s+(\d+)/i);
+  if (wm) {
+    const a=+wm[1],op=wm[2].toLowerCase().replace(/\s+/g,' '),b=+wm[3];
+    const r=op==='plus'?a+b:op==='minus'?a-b:(op.includes('time')||op.includes('multi'))?a*b:a/b;
+    return respond(`${a} ${wm[2]} ${b} is ${r}.`);
   }
 
-  // ─── FEATURE: Note ───
-  const noteM = c.match(/^(?:note|remember|save|write\s+down)\s+(?:that\s+)?(.+)/i);
-  if (noteM) {
-    const note=noteM[1].trim();
-    const notes=JSON.parse(localStorage.getItem('rudra_notes')||'[]');
+  // 3. TIMER / REMINDER
+  const tm = c.match(/remind\s+me\s+(in|after)\s+(\d+)\s+(second|sec|minute|min|hour|hr)/i);
+  if (tm) {
+    const n=+tm[2],u=tm[3].toLowerCase();
+    const ms=u.startsWith('s')?n*1000:u.startsWith('h')?n*3600000:n*60000;
+    setTimeout(()=>{ respond('Your reminder is up, sir!','excited'); },ms);
+    return respond('Reminder set for '+n+' '+u+(n>1?'s':'')+' from now, sir.');
+  }
+
+  // 4. NOTE / SAVE
+  const nm = c.match(/^(note|remember|save|write\s+down)\s+(that\s+)?(.+)/i);
+  if (nm) {
+    const note=nm[3].trim();
+    const notes=JSON.parse(localStorage.getItem('r_notes')||'[]');
     notes.push({text:note,when:new Date().toLocaleString()});
-    localStorage.setItem('rudra_notes',JSON.stringify(notes));
+    localStorage.setItem('r_notes',JSON.stringify(notes));
     learnFact('note',note.slice(0,50));
-    return say('Got it, noted: "'+note.slice(0,40)+'"');
-  }
-  if (/(?:read|show|my)\s+notes/i.test(c)) {
-    const notes=JSON.parse(localStorage.getItem('rudra_notes')||'[]');
-    if(!notes.length) return say('You have no notes saved yet.');
-    const last=notes.slice(-3).map((n,i)=>`${i+1}: ${n.text}`).join('. ');
-    return say('Your notes: '+last);
+    return respond('Noted: "'+note.slice(0,40)+'"');
   }
 
-  // ─── FEATURE: Translate (via AI with explicit instruction) ───
-  if (/translate\s+(.+)\s+(?:to|in(?:to)?)\s+(\w+)/i.test(c)) {
-    askAI(cmd, voiceCmd, `Translate the given text. Reply with ONLY the translation, no explanation.`);
-    return;
+  // 5. READ NOTES
+  if (/^(read|show|what\s+are)\s+(my\s+)?notes/i.test(c)||c==='my notes') {
+    const notes=JSON.parse(localStorage.getItem('r_notes')||'[]');
+    if(!notes.length) return respond('You have no notes saved yet.');
+    return respond('Your last notes: '+notes.slice(-3).map((n,i)=>`${i+1}, ${n.text}`).join('. '));
   }
 
-  // ─── FEATURE: Define / Explain ───
-  if (/^(?:define|what\s+does|meaning\s+of|explain)\s+/i.test(c)) {
-    askAI(cmd, voiceCmd, `Give a clear, simple 1-sentence definition or explanation. No fluff.`);
-    return;
+  // 6. FUN FACT
+  if (/fun\s*fact|random\s*fact|tell\s+me\s+a\s+fact/i.test(c)) {
+    callAI('Tell me one fascinating fun fact. One sentence only, no URL.', isVoice); return;
   }
 
-  // ─── FEATURE: Fun fact ───
-  if (/fun\s+fact|tell\s+me\s+(?:a\s+)?fact|random\s+fact/i.test(c)) {
-    askAI('Give me one interesting fun fact. One sentence only.', voiceCmd);
-    return;
+  // 7. MOTIVATIONAL QUOTE
+  if (/motivat|inspire|quote|encourage\s+me/i.test(c)) {
+    callAI('Give me one powerful motivational quote with the author name. Keep it short.', isVoice); return;
   }
 
-  // ─── FEATURE: Motivational quote ───
-  if (/motivat|inspire|quote|encourage/i.test(c)) {
-    askAI('Give me one powerful motivational quote with the author name.', voiceCmd);
-    return;
+  // 8. TRANSLATE
+  const trM = c.match(/translate\s+["']?(.+?)["']?\s+(?:to|into)\s+(\w+)/i);
+  if (trM) { callAI(`Translate exactly this to ${trM[2]}: "${trM[1]}". Reply with ONLY the translation.`, isVoice); return; }
+
+  // 9. DEFINE / MEANING
+  if (/^(define|what\s+(does|is\s+the\s+meaning\s+of)|meaning\s+of|explain)\s+/i.test(c)) {
+    callAI(cmd+'. Answer in one clear sentence.', isVoice); return;
   }
 
-  // ─── FEATURE: Summarise ───
-  if (/^summaris[e]?|^summarize|^sum up/i.test(c)) {
-    askAI(cmd, voiceCmd);
-    return;
+  // 10. JOKE
+  if (/^(tell\s+(me\s+)?(a\s+)?joke|make\s+me\s+laugh|say\s+something\s+funny)/i.test(c)) {
+    callAI('Tell me one short, clever joke. Keep it clean and funny.', isVoice); return;
   }
 
-  // ─── LEARN + AI ───
-  learnFromMsg(cmd);
-  askAI(cmd, voiceCmd);
+  // 11. WHO IS / WHAT IS (quick knowledge)
+  if (/^(who\s+is|what\s+is|what\s+was|who\s+was)\s+/i.test(c)) {
+    callAI(cmd+'. Answer in 1-2 sentences only.', isVoice); return;
+  }
+
+  // 12. COIN FLIP
+  if (/flip\s+a?\s*coin|heads\s+or\s+tails/i.test(c)) {
+    return respond(Math.random()<0.5?'Heads!':'Tails!','excited');
+  }
+
+  // 13. ROLL DICE
+  if (/roll\s+(a\s+)?dice|roll\s+(a\s+)?die/i.test(c)) {
+    const r=Math.floor(Math.random()*6)+1;
+    return respond('You rolled a '+r+'!','excited');
+  }
+
+  // 14. RANDOM NUMBER
+  const rnM = c.match(/random\s+number\s+(?:between\s+)?(\d+)\s+(?:and|to)\s+(\d+)/i);
+  if (rnM) { return respond('Your random number is '+rnd(+rnM[1],+rnM[2]+1)+'.','happy'); }
+
+  // 15. ALARM (voice)
+  const almM = c.match(/set\s+(an?\s+)?alarm\s+(at|for)\s+(\d+:\d+)/i);
+  if (almM) {
+    const t=almM[3]; clearInterval(alarmInt);
+    alarmInt=setInterval(()=>{const n=new Date(),now=p2(n.getHours())+':'+p2(n.getMinutes());if(now===t){clearInterval(alarmInt);respond('Sir, your alarm is going off!','excited');}},15000);
+    return respond('Alarm set for '+t+', sir.');
+  }
+
+  // 16. PERCENTAGE CALCULATOR
+  const pcM = c.match(/what\s+is\s+(\d+(?:\.\d+)?)\s*%\s+of\s+(\d+(?:\.\d+)?)/i);
+  if (pcM) { return respond(pcM[1]+'% of '+pcM[2]+' is '+(+pcM[1]*+pcM[2]/100)+'.'); }
+
+  // AUTO-LEARN + AI
+  autoLearn(cmd);
+  callAI(cmd, isVoice);
 }
 
-// ── say(): speak + show message ─────────────────────────────
-function say(text, emotion) {
-  addMsg(text,'rudra');
-  speak(text, emotion || detectEmotion(text));
-  addLog('SAY: '+text.slice(0,40));
-}
-
-// ── addMsg ────────────────────────────────────────────────────
-function addMsg(txt, role){
-  const msgs=document.getElementById('messages');if(!msgs)return;
-  const d=document.createElement('div');d.className='msg '+role;
-  d.textContent=txt;
-  msgs.appendChild(d);
-  const ca=document.getElementById('chat-area');if(ca)ca.scrollTop=ca.scrollHeight;
-  return d;
-}
-
-function showThinking(){
-  const d=document.createElement('div');d.className='msg rudra thinking';
-  d.innerHTML='<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
-  document.getElementById('messages')?.appendChild(d);
-  const ca=document.getElementById('chat-area');if(ca)ca.scrollTop=ca.scrollHeight;
-  return d;
-}
-
-function fmtText(t){
-  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>')
-    .replace(/`(.+?)`/g,'<code>$1</code>').replace(/\n/g,'<br>');
-}
-
-// ── AI CALL ───────────────────────────────────────────────────
-async function askAI(msg, voiceCmd, overrideSystem) {
-  if (processing) { addLog('AI busy'); return; }
-  processing = true;
+// ─────────────────────────────────────────────────────────────
+// AI CALL  — consistent, no state bleed
+// ─────────────────────────────────────────────────────────────
+async function callAI(prompt, isVoice, customSys) {
+  if (aiRunning) { addLog('AI: busy, queued'); return; }
+  aiRunning = true;
 
   const badge = document.getElementById('ai-status-badge');
-  chatHistory.push({role:'user',content:msg});
-  if (chatHistory.length > 14) chatHistory = chatHistory.slice(-14);
-
-  const thinkEl = showThinking();
   if (badge) badge.textContent = 'AI: THINKING...';
 
-  const bubble = document.createElement('div');
-  bubble.className = 'msg rudra';
-  document.getElementById('messages')?.appendChild(bubble);
-  const ca = document.getElementById('chat-area');if(ca)ca.scrollTop=ca.scrollHeight;
+  chatHistory.push({role:'user',content:prompt});
+  if (chatHistory.length > 12) chatHistory = chatHistory.slice(-12);
 
-  const knownStr = Object.values(rudraData.known).join('. ');
-  const sys = (overrideSystem || RUDRA_SYSTEM) + (knownStr?'\n\nAbout user: '+knownStr:'');
+  // Build system + known facts
+  const knownStr = Object.values(D.known).join('. ');
+  const sys = (customSys||SYS)+(knownStr?'\n\nAbout user: '+knownStr:'');
 
-  const payload = JSON.stringify({
-    model:AI_MODEL, messages:[{role:'system',content:sys},...chatHistory],
-    max_tokens:800, temperature:0.88, top_p:1, stream:true
+  const body = JSON.stringify({
+    model:AI_MODEL,
+    messages:[{role:'system',content:sys},...chatHistory],
+    max_tokens:600, temperature:0.85, top_p:1, stream:true
   });
-  const hdrs = {'Authorization':'Bearer '+JARVIS_KEY,'Content-Type':'application/json','Accept':'text/event-stream'};
+  const hdr = {'Authorization':'Bearer '+API_KEY,'Content-Type':'application/json','Accept':'text/event-stream'};
 
-  let response=null, errMsg='';
-  for (const ep of [AI_URL, PROXY_URL]) {
-    try {
-      const ctrl=new AbortController(); const timer=setTimeout(()=>ctrl.abort(),25000);
-      response=await fetch(ep,{method:'POST',headers:hdrs,body:payload,signal:ctrl.signal});
-      clearTimeout(timer);
-      if(response.ok){addLog('AI ✓');break;}
-      errMsg='HTTP '+response.status; response=null;
-    } catch(e){errMsg=e.name==='AbortError'?'Timeout':e.message;response=null;}
+  // Show thinking bubble (text mode only)
+  let thinkEl=null, bubble=null;
+  if (!voiceSession) {
+    thinkEl = showThinking();
+    bubble  = document.createElement('div');
+    bubble.className='msg rudra';
+    document.getElementById('messages')?.appendChild(bubble);
+    scrollChat();
   }
 
-  thinkEl.remove();
+  let response=null, err='';
+  for (const ep of [AI_URL, PROXY]) {
+    try {
+      const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),25000);
+      response=await fetch(ep,{method:'POST',headers:hdr,body,signal:ctrl.signal});
+      clearTimeout(t);
+      if(response.ok){addLog('AI ✓');break;}
+      err='HTTP '+response.status; response=null;
+    } catch(e) { err=e.name==='AbortError'?'Timeout':e.message; response=null; }
+  }
+
+  if(thinkEl) thinkEl.remove();
 
   if (!response) {
-    const em='Network issue. Check connection and try again.';
-    bubble.textContent=em; speak(em,'calm');
+    const msg='Network issue. Check connection.';
+    respond(msg,'warning');
     if(badge)badge.textContent='AI: ERROR';
     setTimeout(()=>{if(badge)badge.textContent='AI: RUDRA';},3000);
-    processing=false; return;
+    aiRunning=false; return;
   }
 
   const reader=response.body.getReader(), dec=new TextDecoder();
@@ -555,233 +644,270 @@ async function askAI(msg, voiceCmd, overrideSystem) {
       const{done,value}=await reader.read(); if(done)break;
       buf+=dec.decode(value,{stream:true}); const lines=buf.split('\n'); buf=lines.pop();
       for(const line of lines){
-        const t=line.trim();
-        if(!t||t==='data: [DONE]'||!t.startsWith('data: '))continue;
-        try{const d=JSON.parse(t.slice(6))?.choices?.[0]?.delta;if(d?.content){full+=d.content;bubble.innerHTML=fmtText(full)+'<span class="cur">▌</span>';if(ca)ca.scrollTop=ca.scrollHeight;}}catch{}
+        const lt=line.trim();
+        if(!lt||lt==='data: [DONE]'||!lt.startsWith('data: '))continue;
+        try{
+          const d=JSON.parse(lt.slice(6))?.choices?.[0]?.delta;
+          if(d?.content){
+            full+=d.content;
+            // Stream to bubble only in text mode
+            if(bubble){bubble.innerHTML=fmtText(full)+'<span class="cur">▌</span>';scrollChat();}
+          }
+        }catch{}
       }
     }
-  }catch(e){addLog('STREAM:'+e.message);}
+  } catch(e){addLog('STREAM:'+e.message);}
 
-  bubble.innerHTML = fmtText(full || '...');
+  if(bubble) bubble.innerHTML=fmtText(full||'...');
   if(full) chatHistory.push({role:'assistant',content:full});
   addLog('AI: '+full.length+'ch');
 
-  // ALWAYS speak if mic is on OR voice was used
-  if ((micOn || voiceCmd) && full) {
-    const spokenText = full.replace(/<[^>]*>/g,'').replace(/[#*`_\[\]]/g,'').replace(/https?:\/\/\S+/g,'').slice(0,500);
-    speak(spokenText, detectEmotion(full));
+  // Speak result
+  if (full) {
+    const clean=full.replace(/<[^>]*>/g,'').replace(/[#*`_\[\]]/g,'').replace(/https?:\/\/\S+/g,'').slice(0,500);
+    say(clean, guessEmotion(full));
   }
 
-  // Learn from conversation context
-  rudraData.brain.push({when:new Date().toISOString(),key:'q',value:msg.slice(0,60)});
-  if(rudraData.brain.length%5===0) saveData();
+  // Learn context
+  D.brain.push({when:new Date().toISOString(),key:'q',value:prompt.slice(0,60)});
+  if(D.brain.length%5===0) saveData();
   updateBrainUI();
 
-  if(badge) badge.textContent='AI: RUDRA';
-  processing=false;
+  if(badge)badge.textContent='AI: RUDRA';
+  aiRunning=false;
 }
 
-// ══════════════════════════════════════════════════════════════
-//  MIC ENGINE — clean, simple, reliable
-//  interimResults = FALSE (prevents double-fire bug)
-//  voiceCmd = true passed to handleCmd (ensures voice reply)
-// ══════════════════════════════════════════════════════════════
-function toggleMic(){ micOn ? stopMic() : startMic(); }
+// ─────────────────────────────────────────────────────────────
+// SHOW MESSAGE — only call for text mode
+// ─────────────────────────────────────────────────────────────
+function showMsg(text, role) {
+  const msgs=document.getElementById('messages'); if(!msgs)return;
+  const d=document.createElement('div'); d.className='msg '+role;
+  d.textContent=text; msgs.appendChild(d); scrollChat(); return d;
+}
+function showThinking(){
+  const d=document.createElement('div');d.className='msg rudra thinking';
+  d.innerHTML='<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
+  document.getElementById('messages')?.appendChild(d); scrollChat(); return d;
+}
+function scrollChat(){const ca=document.getElementById('chat-area');if(ca)ca.scrollTop=ca.scrollHeight;}
+function fmtText(t){
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/`(.+?)`/g,'<code>$1</code>').replace(/\n/g,'<br>');
+}
+
+// ─────────────────────────────────────────────────────────────
+// MIC ENGINE — clean, no loops, no double-fire
+// ─────────────────────────────────────────────────────────────
+function toggleMic() { micOn ? stopMic() : startMic(); }
 window.toggleMic = toggleMic;
 
-function startMic(){
+function startMic() {
   if (micOn) return;
-  const SRC = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SRC) { addMsg('Speech recognition needs Chrome/Edge. Use HOLD TO TALK on mobile.','rudra'); return; }
-  micOn = true;
+  const SRC=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SRC){ say('Speech recognition needs Chrome or Edge on desktop.','warning'); return; }
+  micOn=true; voiceSession=true;
   document.getElementById('mic-btn')?.classList.add('active');
   el('mic-label','LISTENING...');
-  el('mic-status-line','Say your command — always active');
-  addLog('MIC: ON');
+  el('mic-status-line','Active — speak anytime');
+  addLog('MIC: ON · Voice-only mode');
   spawnMic();
 }
 
-function spawnMic(){
+function spawnMic() {
   if (!micOn) return;
-  const SRC = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SRC) return;
+  const SRC=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SRC)return;
 
-  recog = new SRC();
-  recog.continuous     = false;  // CRITICAL: single-shot, no loop
-  recog.interimResults = false;  // CRITICAL: final results only, no double-fire
+  recog=new SRC();
+  recog.continuous     = false;   // single-shot — NO loop bug
+  recog.interimResults = false;   // final only — NO double-fire
   recog.lang           = 'en-IN';
   recog.maxAlternatives = 1;
 
-  recog.onresult = e => {
+  recog.onresult = ev => {
     if (!micOn) return;
-    const result = e.results[e.results.length - 1];
-    if (!result.isFinal) return;
-    const tr = result[0].transcript.trim();
+    const res = ev.results[ev.results.length-1];
+    if (!res.isFinal) return;
+    const tr = res[0].transcript.trim();
     if (!tr) return;
 
-    // Dedupe
     const now = Date.now();
-    if (tr === lastCmd && (now - lastCmdTime) < 1500) { addLog('DEDUPE: '+tr.slice(0,20)); return; }
+    if (tr === lastSpoken && (now-lastSpokenAt) < 1500) { addLog('DEDUPE: '+tr.slice(0,20)); return; }
 
     addLog('HEARD: "'+tr.slice(0,40)+'"');
 
-    // Interrupt Rudra if speaking
-    if (speaking) { window.speechSynthesis.cancel(); speaking = false; addLog('INTERRUPTED'); }
+    // Interrupt TTS if speaking
+    if (ttsPlaying) { window.speechSynthesis.cancel(); ttsPlaying=false; }
 
-    addMsg(tr, 'user');
-    handleCmd(tr, true); // true = voice command → always speak back
+    // In voice mode: show user bubble so user sees what was heard
+    showMsg(tr,'user');
+
+    exec(tr, true);  // true = voice call
   };
 
-  recog.onerror = e => {
-    if (e.error === 'not-allowed') { addMsg('Mic denied. Allow microphone.','rudra'); stopMic(); return; }
-    addLog('MIC ERR: '+e.error);
-    // onend will restart for all other errors
+  recog.onerror = ev => {
+    if (ev.error==='not-allowed') { say('Microphone access denied. Please allow it.','warning'); stopMic(); return; }
+    addLog('MIC ERR: '+ev.error);
   };
 
   recog.onend = () => {
     if (!micOn) return;
-    // Restart immediately — this is the self-healing loop
-    // Small delay if processing, instant otherwise
-    setTimeout(() => { if (micOn) spawnMic(); }, processing ? 600 : 80);
+    // Restart after delay — longer if AI is running
+    setTimeout(spawnMic, aiRunning ? 700 : 100);
   };
 
   try { recog.start(); }
-  catch(e) {
-    addLog('MIC spawn: '+e.message);
-    setTimeout(() => { if (micOn) spawnMic(); }, 600);
-  }
+  catch(e) { addLog('MIC spawn: '+e.message); setTimeout(spawnMic, 500); }
 }
 
-function stopMic(){
-  micOn = false;
-  try { recog?.abort(); } catch{}
-  recog = null;
+function stopMic() {
+  micOn=false; voiceSession=false;
+  try{recog?.abort();}catch{} recog=null;
   document.getElementById('mic-btn')?.classList.remove('active');
   el('mic-label','TAP TO SPEAK');
   el('mic-status-line','Microphone OFF');
   addLog('MIC: OFF');
 }
 
-// ── PUSH TO TALK (mobile) ──────────────────────────────────────
-let pttRecog=null;
+// PTT (mobile)
+let pttR=null;
 window.pttStart=function(){
   const SRC=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SRC)return;
-  if(speaking){window.speechSynthesis.cancel();speaking=false;}
-  pttRecog=new SRC();pttRecog.lang='en-IN';pttRecog.continuous=false;pttRecog.interimResults=false;
-  el('mic-status-line','🔴 HOLD & SPEAK...');
-  pttRecog.onresult=e=>{const tr=e.results[0]?.[0]?.transcript?.trim();if(tr){addMsg(tr,'user');handleCmd(tr,true);}};
-  pttRecog.onerror=()=>el('mic-status-line','Error — try again');
-  pttRecog.onend=()=>el('mic-status-line','Released');
-  try{pttRecog.start();}catch{}
+  if(ttsPlaying){window.speechSynthesis.cancel();ttsPlaying=false;}
+  pttR=new SRC(); pttR.lang='en-IN'; pttR.continuous=false; pttR.interimResults=false;
+  el('mic-status-line','🔴 HOLD & SPEAK');
+  pttR.onresult=e=>{const tr=e.results[0]?.[0]?.transcript?.trim();if(tr){showMsg(tr,'user');exec(tr,true);}};
+  pttR.onerror=()=>el('mic-status-line','Error — try again');
+  pttR.onend=()=>el('mic-status-line','Released');
+  try{pttR.start();}catch{}
 };
-window.pttEnd=function(){try{pttRecog?.stop();}catch{} el('mic-status-line','Processing...');};
+window.pttEnd=function(){try{pttR?.stop();}catch{} el('mic-status-line','Processing...');};
 
-// ── PANELS ───────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// RUDRA PANEL
+// ─────────────────────────────────────────────────────────────
 function openRudraPanel(){document.getElementById('rudra-panel')?.classList.remove('hidden');document.getElementById('overlay')?.classList.remove('hidden');}
 function closeRudraPanel(){document.getElementById('rudra-panel')?.classList.add('hidden');document.getElementById('overlay')?.classList.add('hidden');}
-window.openRudra=openRudraPanel;window.closeRudra=closeRudraPanel;
-window.openRudraPanel=openRudraPanel;window.closeRudraPanel=closeRudraPanel;
-
+window.openRudra=openRudraPanel; window.closeRudra=closeRudraPanel;
+window.openRudraPanel=openRudraPanel; window.closeRudraPanel=closeRudraPanel;
 function switchTab(tab){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
   document.querySelectorAll('.tab-content').forEach(c=>c.classList.toggle('hidden',c.id!=='tab-'+tab));
 }
 window.switchTab=switchTab;
 
-// ── COLLEGE HOURS ─────────────────────────────────────────────
+// College hours
 window.saveCollegeHours=function(){
   const from=document.getElementById('clg-from')?.value||'08:00',to=document.getElementById('clg-to')?.value||'17:00',days=document.getElementById('clg-days')?.value||'Mon-Fri';
-  rudraData.college={from,to,days};saveData();
+  D.college={from,to,days}; saveData();
   el('clg-saved','✓ Saved: '+from+'–'+to+' ('+days+')');
-  say('College hours saved. '+from+' to '+to+'. I will never schedule anything during those times.');
+  respond('College hours saved. '+from+' to '+to+'. No study will be scheduled during that time.','happy');
 };
 
-// ── AI SCHEDULE ───────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// SCHEDULE AI
+// ─────────────────────────────────────────────────────────────
 window.generateWithAI=async function(){
   const day=document.getElementById('schedule-day')?.value||new Date().toLocaleDateString('en-US',{weekday:'long'});
   const out=document.getElementById('schedule-output');
-  if(out)out.innerHTML='<div style="color:#336688;padding:10px;font-size:11px">🤖 AI generating fresh schedule...</div>';
-  const isWE=['Saturday','Sunday'].includes(day),clg=rudraData.college;
-  const to12=t=>{const[h,m]=t.split(':').map(Number);const ap=h>=12?'PM':'AM';const h12=h>12?h-12:h===0?12:h;return h12+':'+p2(m)+' '+ap;};
-  const cF=to12(clg.from||'08:00'),cT=to12(clg.to||'17:00');
-  const prompt=`Create a fresh varied schedule for ${day}.
-COLLEGE: ${isWE?'Weekend — no college':'BLOCKED '+cF+' to '+cT+' — NO study/learning here'}
-ROUTINE: ${rudraData.routine.map(r=>r.time+': '+r.task).join(', ')||'none'}
-GOALS: ${rudraData.goals.map(g=>g.name+' ('+g.duration+')').join(', ')||'none'}
-Rules: Study only before/after college. Include meals, breaks, exercise, sleep. Be specific about tasks.
-Return ONLY JSON array: [{"time":"6:00 AM","task":"Wake up & freshen up","type":"routine"}]`;
+  if(out)out.innerHTML='<div style="color:#336688;padding:10px;font-size:11px">🤖 Generating schedule...</div>';
+  const isWE=['Saturday','Sunday'].includes(day),clg=D.college;
+  const to12h=t=>{const[h,m]=t.split(':').map(Number);const ap=h>=12?'PM':'AM';const h12=h>12?h-12:h===0?12:h;return h12+':'+p2(m)+' '+ap;};
+  const cF=to12h(clg.from||'08:00'),cT=to12h(clg.to||'17:00');
+  const prompt=`Create a fresh schedule for ${day}.\nCOLLEGE: ${isWE?'Weekend — no college':'STRICTLY BLOCKED '+cF+' to '+cT+' — no study/learning here'}\nROUTINE: ${D.routine.map(r=>r.time+': '+r.task).join(', ')||'none'}\nGOALS: ${D.goals.map(g=>g.name).join(', ')||'none'}\nRules: Study only before/after college. Include meals, breaks, exercise, sleep. Be specific.\nReturn ONLY JSON array: [{"time":"6:00 AM","task":"Wake up","type":"routine"}]`;
   try{
     const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),25000);
-    const r=await fetch(AI_URL,{method:'POST',headers:{'Authorization':'Bearer '+JARVIS_KEY,'Content-Type':'application/json','Accept':'text/event-stream'},body:JSON.stringify({model:AI_MODEL,messages:[{role:'system',content:SCHEDULE_SYSTEM},{role:'user',content:prompt}],max_tokens:1200,temperature:0.95,stream:true}),signal:ctrl.signal});
+    const r=await fetch(AI_URL,{method:'POST',headers:{'Authorization':'Bearer '+API_KEY,'Content-Type':'application/json','Accept':'text/event-stream'},body:JSON.stringify({model:AI_MODEL,messages:[{role:'system',content:SCHED_SYS},{role:'user',content:prompt}],max_tokens:1200,temperature:0.95,stream:true}),signal:ctrl.signal});
     clearTimeout(t);
     const reader=r.body.getReader(),dec=new TextDecoder();let buf='',full='';
     while(true){const{done,value}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const lines=buf.split('\n');buf=lines.pop();for(const l of lines){const lt=l.trim();if(!lt||lt==='data: [DONE]'||!lt.startsWith('data: '))continue;try{const d=JSON.parse(lt.slice(6))?.choices?.[0]?.delta;if(d?.content)full+=d.content;}catch{}}}
     const jm=full.match(/\[[\s\S]+\]/);if(!jm)throw new Error('no JSON');
     const slots=JSON.parse(jm[0]);
     const colors={study:'#00cfff',break:'#ff6b00',routine:'#5588aa',college:'#ff4444',sleep:'#334466'};
-    let html=`<h4 style="color:#ff6b00;margin-bottom:8px;font-size:11px;letter-spacing:2px">🤖 ${day.toUpperCase()} · ${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</h4><table class="st"><thead><tr><th>TIME</th><th>TASK</th></tr></thead><tbody>`;
+    let html=`<h4 style="color:#ff6b00;margin-bottom:8px;font-size:11px">${day.toUpperCase()} · ${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</h4><table class="st"><thead><tr><th>TIME</th><th>TASK</th></tr></thead><tbody>`;
     slots.forEach(s=>{const col=colors[s.type]||'#6aaccc';html+=`<tr><td style="color:${col}">${s.time}</td><td contenteditable="true" style="color:${col}">${s.task}</td></tr>`;});
-    html+=`</tbody></table><div style="font-size:9px;color:#336688;margin-top:5px">College blocked: ${isWE?'Weekend':cF+'–'+cT} · Click cells to edit</div>`;
-    if(out)out.innerHTML=html;addLog('SCHED: done for '+day);
+    html+=`</tbody></table><div style="font-size:9px;color:#336688;margin-top:5px">Blocked: ${isWE?'Weekend':cF+'–'+cT}</div>`;
+    if(out)out.innerHTML=html;
   }catch(e){addLog('SCHED ERR:'+e.message);window.generateSchedule();}
 };
-window.generateWeekly=function(){const out=document.getElementById('schedule-output');if(out)out.innerHTML=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(d=>buildDayHTML(d)).join('');};
 window.generateSchedule=function(){const day=document.getElementById('schedule-day')?.value||'Monday';const out=document.getElementById('schedule-output');if(out)out.innerHTML=buildDayHTML(day);};
-function buildDayHTML(d){return`<h4 style="color:#ff6b00;margin:10px 0 4px;font-size:11px">${d.toUpperCase()}</h4>`+makeTable(buildDaySlots(d));}
-function buildDaySlots(day){
-  const isWE=['Saturday','Sunday'].includes(day),clg=rudraData.college||{from:'08:00',to:'17:00'};
-  const slots=rudraData.routine.map(r=>({time:r.time,task:r.task}));
-  if(!isWE)slots.push({time:to12h(clg.from||'08:00'),task:'🏫 COLLEGE'});
-  if(rudraData.goals.length){const safe=isWE?[['7:00 AM','8:30 AM'],['10:00 AM','11:30 AM'],['3:00 PM','4:30 PM']]:[ ['6:00 AM','7:30 AM'],['5:30 PM','7:00 PM'],['8:00 PM','9:30 PM']];rudraData.goals.forEach((g,i)=>{const s=safe[i%safe.length];slots.push({time:`${s[0]}–${s[1]}`,task:'📚 '+g.name});});}
-  if(!slots.length){slots.push({time:'6:00 AM',task:'Wake up'},{time:'8:00 AM',task:'Breakfast'});if(!isWE)slots.push({time:to12h(clg.from||'08:00'),task:'🏫 College'});slots.push({time:'6:00 PM',task:'Study'},{time:'10:30 PM',task:'Sleep'});}
+window.generateWeekly=function(){const out=document.getElementById('schedule-output');if(out)out.innerHTML=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(buildDayHTML).join('');};
+function buildDayHTML(d){return`<h4 style="color:#ff6b00;margin:10px 0 4px;font-size:11px">${d.toUpperCase()}</h4>`+makeSchedTable(buildSlots(d));}
+function buildSlots(day){
+  const isWE=['Saturday','Sunday'].includes(day),clg=D.college||{from:'08:00',to:'17:00'};
+  const slots=D.routine.map(r=>({time:r.time,task:r.task}));
+  if(!isWE)slots.push({time:to12(clg.from||'08:00'),task:'🏫 COLLEGE'});
+  if(D.goals.length){const safe=isWE?[['7:00 AM','8:30 AM'],['10:00 AM','11:30 AM'],['3:00 PM','4:30 PM']]:[ ['6:00 AM','7:30 AM'],['5:30 PM','7:00 PM'],['8:00 PM','9:30 PM']];D.goals.forEach((g,i)=>{const s=safe[i%safe.length];slots.push({time:`${s[0]}–${s[1]}`,task:'📚 '+g.name});});}
+  if(!slots.length){slots.push({time:'6:00 AM',task:'Wake up'},{time:'8:00 AM',task:'Breakfast'});if(!isWE)slots.push({time:to12(clg.from||'08:00'),task:'🏫 College'});slots.push({time:'6:00 PM',task:'Study'},{time:'10:30 PM',task:'Sleep'});}
   return slots.sort((a,b)=>tv(a.time)-tv(b.time));
 }
-function to12h(t){const[h,m]=t.split(':').map(Number);const ap=h>=12?'PM':'AM';const h12=h>12?h-12:h===0?12:h;return h12+':'+p2(m)+' '+ap;}
-function makeTable(slots){return`<table class="st"><thead><tr><th>TIME</th><th>TASK</th></tr></thead><tbody>`+slots.map(s=>`<tr><td contenteditable="true">${s.time}</td><td contenteditable="true">${s.task}</td></tr>`).join('')+'</tbody></table>';}
-function tv(t){const m=t.match(/(\d+):(\d+)\s*(AM|PM)/i);if(!m)return 9999;let h=parseInt(m[1]);if(m[3].toUpperCase()==='PM'&&h!==12)h+=12;if(m[3].toUpperCase()==='AM'&&h===12)h=0;return h*60+parseInt(m[2]);}
+function to12(t){const[h,m]=t.split(':').map(Number);const ap=h>=12?'PM':'AM';const h12=h>12?h-12:h===0?12:h;return h12+':'+p2(m)+' '+ap;}
+function makeSchedTable(slots){return`<table class="st"><thead><tr><th>TIME</th><th>TASK</th></tr></thead><tbody>`+slots.map(s=>`<tr><td contenteditable="true">${s.time}</td><td contenteditable="true">${s.task}</td></tr>`).join('')+'</tbody></table>';}
+function tv(t){const m=t.match(/(\d+):(\d+)\s*(AM|PM)/i);if(!m)return 9999;let h=+m[1];if(m[3].toUpperCase()==='PM'&&h!==12)h+=12;if(m[3].toUpperCase()==='AM'&&h===12)h=0;return h*60+ +m[2];}
 
-// ── LEARNING ──────────────────────────────────────────────────
-function learnFact(key,value){rudraData.known[key]=value;rudraData.brain.push({when:new Date().toISOString(),key,value});updateBrainUI();}
-function learnFromMsg(msg){
-  const pats=[[/my name is (\w+)/i,'name',m=>'Name: '+m[1]],[/i am (\d+) years?/i,'age',m=>'Age: '+m[1]],[/i study (\w[\w\s]+)/i,'study',m=>'Studies: '+m[1]],[/i like (\w[\w\s]+)/i,'like',m=>'Likes: '+m[1]],[/call me (\w+)/i,'nickname',m=>'Nickname: '+m[1]],[/my goal is (.+)/i,'goal',m=>'Goal: '+m[1]]];
-  let l=false;for(const[rx,k,fn]of pats){const m=msg.match(rx);if(m){learnFact(k,fn(m));l=true;}}
-  if(l)saveData();
+// ─────────────────────────────────────────────────────────────
+// LEARNING
+// ─────────────────────────────────────────────────────────────
+function learnFact(key,val){D.known[key]=val;D.brain.push({when:new Date().toISOString(),key,value:val});updateBrainUI();}
+function autoLearn(msg){
+  const pats=[[/my name is (\w+)/i,'name',m=>'Name: '+m[1]],[/i am (\d+) years?/i,'age',m=>'Age: '+m[1]],[/i study (\w[\w\s]+)/i,'study',m=>'Studies: '+m[1]],[/i like (\w[\w\s]+)/i,'like',m=>'Likes: '+m[1]],[/call me (\w+)/i,'nick',m=>'Nickname: '+m[1]],[/my goal is (.+)/i,'goal',m=>'Goal: '+m[1]]];
+  let l=false; for(const[rx,k,fn]of pats){const m=msg.match(rx);if(m){learnFact(k,fn(m));l=true;}} if(l)saveData();
 }
 function updateBrainUI(){
-  el('brain-sessions',rudraData.sessions||0);
-  el('brain-facts',Object.keys(rudraData.known).length);
-  const lvl=rudraData.sessions<3?'LEARNING':rudraData.sessions<10?'ADAPTING':rudraData.sessions<25?'INTELLIGENT':'EXPERT';
-  el('brain-level',lvl);
+  el('brain-sessions',D.sessions||0); el('brain-facts',Object.keys(D.known).length);
+  el('brain-level',D.sessions<3?'LEARNING':D.sessions<10?'ADAPTING':D.sessions<25?'INTELLIGENT':'EXPERT');
   const bl=document.getElementById('brain-log-list');
-  if(bl)bl.innerHTML=[...rudraData.brain].reverse().slice(0,20).map(b=>`<div class="log-entry"><span>${new Date(b.when).toLocaleDateString()}</span> ${b.key}: ${b.value}</div>`).join('')||'<div style="color:#336688;font-size:10px;padding:4px">No data yet.</div>';
+  if(bl)bl.innerHTML=[...D.brain].reverse().slice(0,20).map(b=>`<div class="log-entry"><span>${new Date(b.when).toLocaleDateString()}</span> ${b.key}: ${b.value}</div>`).join('')||'<div style="color:#336688;font-size:10px;padding:4px">No data yet.</div>';
   const kf=document.getElementById('known-facts');
-  if(kf){const f=Object.entries(rudraData.known);kf.innerHTML=f.length?f.map(([k,v])=>`<div class="log-entry"><span>${k}</span> ${v}</div>`).join(''):'<div style="color:#336688;font-size:10px;padding:4px">Tell me about yourself!</div>';}
+  if(kf){const f=Object.entries(D.known);kf.innerHTML=f.length?f.map(([k,v])=>`<div class="log-entry"><span>${k}</span> ${v}</div>`).join(''):'<div style="color:#336688;font-size:10px;padding:4px">Tell me about yourself!</div>';}
 }
-window.clearBrain=function(){if(confirm('Clear all learning data?')){rudraData.brain=[];rudraData.known={};saveData();updateBrainUI();say('Brain cleared.');}};
+window.clearBrain=function(){if(confirm('Clear all learning data?')){D.brain=[];D.known={};saveData();updateBrainUI();respond('Brain cleared.');}};
 
-// ── DATA RENDERS ──────────────────────────────────────────────
-window.addRoutine=function(){const time=document.getElementById('routine-time')?.value.trim(),task=document.getElementById('routine-task')?.value.trim();if(!time||!task)return;rudraData.routine.push({id:Date.now(),time,task});saveData();renderRoutine();document.getElementById('routine-time').value='';document.getElementById('routine-task').value='';};
-function renderRoutine(){const el2=document.getElementById('routine-list');if(!el2)return;el2.innerHTML='';[...rudraData.routine].sort((a,b)=>a.time.localeCompare(b.time)).forEach(r=>{el2.innerHTML+=`<div class="entry-item"><span class="et">${r.time} — ${r.task}</span><button class="eb" onclick="editR(${r.id})">✏️</button><button class="ed" onclick="delR(${r.id})">🗑</button></div>`;});}
-window.delR=id=>{rudraData.routine=rudraData.routine.filter(r=>r.id!==id);saveData();renderRoutine();};
-window.editR=id=>{const i=rudraData.routine.find(r=>r.id===id);if(!i)return;const t=prompt('Time:',i.time),k=prompt('Task:',i.task);if(t!==null)i.time=t.trim();if(k!==null)i.task=k.trim();saveData();renderRoutine();};
+// ─────────────────────────────────────────────────────────────
+// ROUTINE / GOALS / PROGRESS
+// ─────────────────────────────────────────────────────────────
+window.addRoutine=function(){const time=document.getElementById('routine-time')?.value.trim(),task=document.getElementById('routine-task')?.value.trim();if(!time||!task)return;D.routine.push({id:Date.now(),time,task});saveData();renderRoutine();document.getElementById('routine-time').value='';document.getElementById('routine-task').value='';};
+function renderRoutine(){const el2=document.getElementById('routine-list');if(!el2)return;el2.innerHTML='';[...D.routine].sort((a,b)=>a.time.localeCompare(b.time)).forEach(r=>{el2.innerHTML+=`<div class="entry-item"><span class="et">${r.time} — ${r.task}</span><button class="eb" onclick="editR(${r.id})">✏️</button><button class="ed" onclick="delR(${r.id})">🗑</button></div>`;});}
+window.delR=id=>{D.routine=D.routine.filter(r=>r.id!==id);saveData();renderRoutine();};
+window.editR=id=>{const i=D.routine.find(r=>r.id===id);if(!i)return;const t=prompt('Time:',i.time),k=prompt('Task:',i.task);if(t!==null)i.time=t.trim();if(k!==null)i.task=k.trim();saveData();renderRoutine();};
 
-window.addGoal=function(){const name=document.getElementById('goal-name')?.value.trim(),dur=document.getElementById('goal-duration')?.value.trim();if(!name||!dur)return;rudraData.goals.push({id:Date.now(),name,duration:dur,progress:0});saveData();renderGoals();renderProgress();document.getElementById('goal-name').value='';document.getElementById('goal-duration').value='';};
-function renderGoals(){const el2=document.getElementById('goals-list');if(!el2)return;el2.innerHTML='';rudraData.goals.forEach(g=>{el2.innerHTML+=`<div class="entry-item"><span class="et">${g.name}</span><span class="em">${g.duration}</span><button class="eb" onclick="editG(${g.id})">✏️</button><button class="ed" onclick="delG(${g.id})">🗑</button></div>`;});}
-window.delG=id=>{rudraData.goals=rudraData.goals.filter(g=>g.id!==id);saveData();renderGoals();renderProgress();};
-window.editG=id=>{const i=rudraData.goals.find(g=>g.id===id);if(!i)return;const n=prompt('Goal:',i.name),d=prompt('Duration:',i.duration);if(n!==null)i.name=n.trim();if(d!==null)i.duration=d.trim();saveData();renderGoals();renderProgress();};
+window.addGoal=function(){const name=document.getElementById('goal-name')?.value.trim(),dur=document.getElementById('goal-duration')?.value.trim();if(!name||!dur)return;D.goals.push({id:Date.now(),name,duration:dur,progress:0});saveData();renderGoals();renderProgress();document.getElementById('goal-name').value='';document.getElementById('goal-duration').value='';};
+function renderGoals(){const el2=document.getElementById('goals-list');if(!el2)return;el2.innerHTML='';D.goals.forEach(g=>{el2.innerHTML+=`<div class="entry-item"><span class="et">${g.name}</span><span class="em">${g.duration}</span><button class="eb" onclick="editG(${g.id})">✏️</button><button class="ed" onclick="delG(${g.id})">🗑</button></div>`;});}
+window.delG=id=>{D.goals=D.goals.filter(g=>g.id!==id);saveData();renderGoals();renderProgress();};
+window.editG=id=>{const i=D.goals.find(g=>g.id===id);if(!i)return;const n=prompt('Goal:',i.name),d=prompt('Duration:',i.duration);if(n!==null)i.name=n.trim();if(d!==null)i.duration=d.trim();saveData();renderGoals();renderProgress();};
 
-function renderProgress(){const el2=document.getElementById('progress-list');if(!el2)return;el2.innerHTML='';if(!rudraData.goals.length){el2.innerHTML='<p style="color:#336688;font-size:10px;padding:4px">Add goals in My Info tab.</p>';return;}rudraData.goals.forEach(g=>{const p=g.progress||0;el2.innerHTML+=`<div class="pi"><div class="ph"><span class="pt">${g.name} <small style="color:#336688">(${g.duration})</small></span><span class="pp" id="ph-${g.id}">${p}%</span></div><div class="pb-bg"><div class="pb-fill" id="pb-${g.id}" style="width:${p}%"></div></div><div class="pc"><input type="range" min="0" max="100" value="${p}" oninput="updP(${g.id},this.value)"><span style="font-size:10px;color:#336688" id="pp-${g.id}">${p}%</span></div></div>`;});}
-window.updP=function(id,val){const g=rudraData.goals.find(g=>g.id===id);if(!g)return;g.progress=+val;saveData();['pb','pp','ph'].forEach(p=>{const e=document.getElementById(p+'-'+g.id);if(e){if(p==='pb')e.style.width=val+'%';else e.textContent=val+'%';}});};
+function renderProgress(){const el2=document.getElementById('progress-list');if(!el2)return;el2.innerHTML='';if(!D.goals.length){el2.innerHTML='<p style="color:#336688;font-size:10px;padding:4px">Add goals in My Info tab.</p>';return;}D.goals.forEach(g=>{const p=g.progress||0;el2.innerHTML+=`<div class="pi"><div class="ph"><span class="pt">${g.name} <small style="color:#336688">(${g.duration})</small></span><span class="pp" id="ph-${g.id}">${p}%</span></div><div class="pb-bg"><div class="pb-fill" id="pb-${g.id}" style="width:${p}%"></div></div><div class="pc"><input type="range" min="0" max="100" value="${p}" oninput="updP(${g.id},this.value)"><span style="font-size:10px;color:#336688" id="pp-${g.id}">${p}%</span></div></div>`;});}
+window.updP=function(id,val){const g=D.goals.find(g=>g.id===id);if(!g)return;g.progress=+val;saveData();['pb','pp','ph'].forEach(p=>{const e=document.getElementById(p+'-'+g.id);if(e){if(p==='pb')e.style.width=val+'%';else e.textContent=val+'%';}});};
 
 function renderAll(){renderRoutine();renderGoals();renderProgress();updateBrainUI();}
 
-// ── TABS / ALARM / JOKE / QUICK ───────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// TABS / ALARM / JOKE / QUICK BUTTONS
+// ─────────────────────────────────────────────────────────────
 window.btabClick=function(btn,tab){document.querySelectorAll('.btab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.querySelectorAll('.btab-pane').forEach(p=>p.classList.add('hidden'));document.getElementById('btab-'+tab)?.classList.remove('hidden');};
-window.setAlarm=function(){const t=document.getElementById('alarm-time')?.value;if(!t)return;clearInterval(alarmTimer);el('alarm-st','SET: '+t);alarmTimer=setInterval(()=>{const n=new Date(),now=p2(n.getHours())+':'+p2(n.getMinutes());if(now===t){clearInterval(alarmTimer);el('alarm-st','⚡ TRIGGERED!');const m='Sir, your alarm is going off!';addMsg(m,'rudra');speak(m,'excited');}},15000);};
-window.fetchJoke=async function(){try{const r=await fetch('https://v2.jokeapi.dev/joke/Programming,Misc?type=single&blacklistFlags=nsfw,racist');const d=await r.json();const j=d.joke||`${d.setup} — ${d.delivery}`;el('joke-text',j);say(j,'happy');}catch{el('joke-text','Couldn\'t fetch a joke.');}};
-window.qCmd=function(cmd){({time:()=>say('It\'s '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})+', sir.'),weather:()=>handleCmd('weather',false),yt:()=>openSiteNow('https://www.youtube.com','YouTube'),joke:()=>window.fetchJoke()})[cmd]?.();};
 
-// ── UTILS ─────────────────────────────────────────────────────
+window.setAlarm=function(){
+  const t=document.getElementById('alarm-time')?.value;if(!t)return;
+  clearInterval(alarmInt);el('alarm-st','SET: '+t);
+  alarmInt=setInterval(()=>{const n=new Date(),now=p2(n.getHours())+':'+p2(n.getMinutes());if(now===t){clearInterval(alarmInt);el('alarm-st','⚡!');respond('Sir, your alarm!','excited');}},15000);
+};
+
+window.fetchJoke=async function(){
+  try{const r=await fetch('https://v2.jokeapi.dev/joke/Programming,Misc?type=single&blacklistFlags=nsfw,racist');const d=await r.json();const j=d.joke||`${d.setup} — ${d.delivery}`;el('joke-text',j);respond(j,'happy');}
+  catch{respond('Couldn\'t fetch a joke right now.');}
+};
+
+window.qCmd=function(cmd){({
+  time:()=>respond('It\'s '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})+', sir.'),
+  weather:()=>exec('weather',false),
+  yt:()=>openSite('https://www.youtube.com','YouTube'),
+  joke:()=>window.fetchJoke()
+})[cmd]?.();};
+
+// ─────────────────────────────────────────────────────────────
+// UTILS
+// ─────────────────────────────────────────────────────────────
 function el(id,val){const e=document.getElementById(id);if(e)e.textContent=val;}
 function rnd(a,b){return Math.floor(a+Math.random()*(b-a));}
 function p2(n){return String(n).padStart(2,'0');}
