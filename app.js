@@ -189,6 +189,13 @@ window.addEventListener('load', async () => {
 
   await loadData();
   renderAll(); updateBrainUI();
+  // Ensure default tab is visible
+  setTimeout(() => {
+    switchTab('agheera');
+    // Make sure tab-agheera content is shown
+    const def = document.getElementById('tab-agheera');
+    if (def) def.classList.remove('hidden');
+  }, 200);
   setTimeout(greet, 600);
 });
 
@@ -323,25 +330,34 @@ function openSite(url, name) {
   const key = name.toLowerCase();
   const now = Date.now();
 
-  // FIX 2: hard cooldown — if same site opened within 4s, SKIP
-  if (openCooldown[key] && (now - openCooldown[key]) < OPEN_CD_MS) {
-    addLog('COOLDOWN: skipped '+name);
-    return;
+  // Cooldown: 3s per site to prevent loop — but allow re-open after
+  if (openCooldown[key] && (now - openCooldown[key]) < 3000) {
+    addLog('CD skip: '+name); return;
   }
   openCooldown[key] = now;
 
-  try { window.open(url, '_blank'); } catch(e) { addLog('OPEN ERR:'+e.message); }
+  // BROWSER FIX: window.open() is blocked from speech recognition callbacks.
+  // Using <a click> trick which bypasses popup blocker and works from any context.
+  try {
+    const a = document.createElement('a');
+    a.href = url.startsWith('http') ? url : 'https://'+url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => document.body.removeChild(a), 500);
+    addLog('OPEN: '+name);
+  } catch(e) {
+    // Final fallback
+    try { window.open(url, '_blank'); } catch(e2) { addLog('OPEN ERR: '+e2.message); }
+  }
 
   const msg = 'Opening '+name+'.';
-  addLog('OPEN: '+name);
-
-  // FIX 1: voice session → speak only, no chat message
-  if (voiceSession) {
-    say(msg, 'neutral');
-  } else {
-    showMsg(msg,'rudra');
-    say(msg,'neutral');
-  }
+  // Always speak — works for voice and text mode
+  say(msg, 'neutral');
+  // Show text bubble in text mode
+  if (!voiceSession) showMsg(msg,'rudra');
 }
 window.openURL  = openSite;
 window.openSite = openSite;
